@@ -7,9 +7,9 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 7.5
-- **Phase**: Real Provider Demo Readiness Freeze（workbuddy-docs 文档冻结，纯文档）
-- **Gate Status**: In Progress（文档冻结已采纳；待对外/Demo 实测回填时翻 Go）
+- **Current Sprint**: Sprint 8.2
+- **Phase**: Repo Operating Rules（workbuddy-docs 纯文档，GitHub 主干协作规则固化）
+- **Gate Status**: In Progress（规则被协议采纳即推进；后续代码 Sprint 实际遵守时由 Gate 持续核查）
 - **Last Updated**: 2026-07-10
 - **Owner**: workbuddy-docs
 
@@ -17,41 +17,38 @@
 
 ## 当前目标
 
-冻结当前 Demo 语义边界（workbuddy-docs 纯文档冻结，不改代码）：
-- 默认 Mock 可演示（路线 A 纯 mock / 路线 B mock runner + DB opinions），**零 LLM 依赖**；
-- LM Studio 仅 dev-only、显式 env guard、单 review ≤3 capped，弱输出 fallback_mock/failed 受控兜底、不代表系统失败；
-- openai_compatible / 付费 API 未启用（结构 GUARD，缺 Key 永不静默启用）。
-更新 `MVP_Demo_Runbook.md`（§2/§3 LLM 依赖声明 + 新增 §11 Dev-only LM Studio 路线）、`Frontend_Demo_QA_Checklist.md`（新增 §7 真实模型参与可观测性核查）、输出 `Sprint_7.5_Demo_Readiness_Freeze.md`（可演示能力 / 不可宣称能力 / 环境变量矩阵 / 风险与口径），并滚动本文件到 7.5。**只写文档、不运行付费 API、不写密钥、不写本机绝对路径。**
+把 GitHub 主干协作规则写清楚，避免后续 agent 在错误目录/分支/未同步状态下工作（workbuddy-docs 纯文档，不改业务代码）：
+- 新增 `Sprint_8.2_Repo_Operating_Rules.md`（七条强制规则 + 详解 + 提交纪律 + 红线核对）；
+- 更新 `AGENT_COORDINATION_PROTOCOL.md` 新增 §9 GitHub 工作规则（开工三连查 / 开工目录 / 禁止包装区 init / 忽略清单 / 文档落点 / 验证命令留痕 / 提交纪律）；
+- 滚动本文件到 8.2。
+引用 8.1 已建立的 `origin=feather100/PrismReview` + `main` + `.gitignore`。**不改业务代码、不运行模型、不写密钥。**
 
 ---
 
 ## 当前输入文档
 
-- `docs/coordination/Sprint_7.3_Workbuddy_Review.md`（dev-only queue LM Studio 实现复审，Go，无保留；cap=3 硬约束）
-- `docs/coordination/Sprint_7.4_LMStudio_Capped_E2E.md`（本地 LM Studio 端到端，15/15 PASS）
-- `docs/coordination/Sprint_7.4_Workbuddy_Review.md`（快速 Gate 复审，Go）
-- `docs/demo/MVP_Demo_Runbook.md`（本次待刷新：§2/§3 + 新增 §11）
-- `docs/demo/Frontend_Demo_QA_Checklist.md`（本次待刷新：新增 §7）
-- `docs/coordination/ACTIVE_SPRINT.md`（上一跳 7.2，需补 7.3/7.4 并滚动至 7.5）
+- `docs/coordination/Sprint_8.1_GitHub_Bootstrap.md`（Git 引导完成，已推送 `origin/main` `a4da677…`）
+- `docs/coordination/Sprint_8.1_Workbuddy_Review.md`（快速 Gate Go）
+- `docs/coordination/AGENT_COORDINATION_PROTOCOL.md`（本次待更新：新增 §9）
+- `docs/coordination/ACTIVE_SPRINT.md`（上一跳 7.5）
 
 ---
 
 ## 当前输出文档
 
-- `docs/coordination/Sprint_7.5_Demo_Readiness_Freeze.md`（本次冻结主文档）
-- `docs/demo/MVP_Demo_Runbook.md`（滚动：§2/§3 LLM 依赖声明 + §11 Dev-only LM Studio 路线）
-- `docs/demo/Frontend_Demo_QA_Checklist.md`（滚动：新增 §7 真实模型参与可观测性核查）
-- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 7.5）
+- `docs/coordination/Sprint_8.2_Repo_Operating_Rules.md`（本次规则主文档）
+- `docs/coordination/AGENT_COORDINATION_PROTOCOL.md`（滚动：新增 §9 GitHub 工作规则）
+- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 8.2）
 
 ---
 
 ## 红线
 
-- 不改代码（本次纯文档冻结，不触碰任何 .ts / scripts / schema / 前端）
-- 不运行付费 API / openai_compatible（仅描述既有 dev-only lmstudio 证据）
-- 不写 API Key（仅 `sk-...` 占位）/ 不写本机绝对路径 / 不写敏感原文
-- 不把 fallback_mock / failed 包装成"真实模型成功"，也不把弱输出描述为"系统不可用"
-- 不改默认 mock demo 语义（默认实例恒 mock，pilot 仅独立进程内联 env）
+- 不改业务代码（本次纯文档，仅新增/更新文档）
+- 不运行模型（无模型调用）
+- 不写密钥（仅 `sk-...` 占位格式说明，未写任何真实 Key）
+- 不执行提交/推送（规则文档本身不要求提交；本 Sprint 仅写文档）
+- 文档落点正确（本文与协议更新均在 `docs/coordination/`）
 
 ---
 
@@ -71,5 +68,7 @@
 | 7.1B | Go（spike hygiene 加固：DEBUG_PROVIDER_RAW 门控 + parse 失败 fail-closed，8 项全过） |
 | 7.2 | Go（dev-only queue 真实 provider 试点合同；标准流程，7.3 已落地） |
 | 7.3 | Go（实现 `MODEL_PILOT_MAX_ROLES` 硬约束 cap=3；默认 mock 零回归；smoke 全绿 + tsc 0 errors） |
-| 7.4 | Go（本地 LM Studio dev-only E2E 15/15 PASS；鲁棒性 5/5；单 review ≤3；无泄漏；快速 Gate 复审通过） |
-| **7.5** | **In Progress**（Demo 就绪冻结；文档语义已锚定，待对外/Demo 实测回填时翻 Go） |
+| 7.4 | Go（本地 LM Studio dev-only E2E 15/15 PASS；鲁棒性 5/5；单 review ≤3；无泄漏） |
+| 7.5 | Go（Demo 就绪冻结；文档语义已锚定，标准 Demo 零 LLM 依赖、LM Studio 仅 dev-only ≤3 capped、付费 API 未启用） |
+| **8.1** | **Go**（GitHub 引导完成并推送 `origin/main` `a4da677…`；`.gitignore` 全覆盖；无真实 Key/业务改动；快速 Gate 复审通过） |
+| **8.2** | **In Progress**（Repo Operating Rules 固化；规则写入协议 §9 即推进，待后续代码 Sprint 实际遵守时由 Gate 持续核查） |

@@ -258,6 +258,78 @@ Sprint 3.11 — Agent Coordination Protocol
 
 ---
 
+## 9. GitHub 工作规则（Repo Operating Rules）
+
+> 定版：Sprint 8.2（配合 `Sprint_8.1_GitHub_Bootstrap.md` 已建立的 `origin = https://github.com/feather100/PrismReview.git` + `main` 分支 + `.gitignore`）。
+> 目的：避免后续 agent 在错误目录、错误分支、未同步状态下工作。所有涉及代码的 Sprint 开工前**必须遵守**本节。
+
+### 9.1 开工三连查（强制，P0）
+
+每次开工（含文档 Sprint）先执行以下命令，确认基线正确后再动手：
+
+```bash
+git rev-parse --show-toplevel   # 必须等于 PrismReview 根，不得是上层包装目录
+git status                      # 确认工作树状态（有无未提交改动）
+git remote -v                   # 确认 origin 指向 feather100/PrismReview
+git pull --ff-only origin main  # 快进同步到最新 main（仅快进，不自动 merge）
+```
+
+- `--ff-only` 保证只快进：若本地有分叉提交，pull 会拒绝，此时先处理分叉（rebase 或核对），**不得**用 `--force` / `--no-ff` 强行合并。
+- 未做三连查 → 不得动手（避免基于陈旧/错误代码工作）。
+
+### 9.2 开工目录规则（强制，P0）
+
+- 唯一有效工作根：**`D:\workspace\PrismReview`**（本地）或 GitHub clone 的同名 PrismReview 根目录。
+- 开工前用 `git rev-parse --show-toplevel` 校验；输出必须是 PrismReview 根，**不得**是上层包装目录（如 `/d/workspace`、`/Users/.../work` 或 Codex/Qoderwork 生成的包装区）。
+- 目录不对 → 立即停下切换，不盲干。
+
+### 9.3 禁止在包装工作区初始化 Git（强制，P0）
+
+- Codex / Qoderwork 等平台可能生成**包装工作区**（外层目录 + 内层项目）。**绝不在**此类包装区执行 `git init` 或把整个包装区作为仓库根。
+- 若在某平台收到"clone 到临时区"的任务，先确认 `toplevel` 仍是 PrismReview 根、remote 指向 `feather100/PrismReview`，再开工。
+- 误在包装区 init：立即 `rm -rf <包装区>/.git`（仅删误建仓库，不删项目文件）或放弃该工作区，回项目根重来。
+
+### 9.4 禁止提交的产物（强制，P0）
+
+以下**永不入库**（已由 8.1 `.gitignore` 覆盖；提交前 `git status` 二次确认未被暂存）：
+
+| 类别 | 路径/模式 |
+|------|-----------|
+| 密钥 | `.env` / `apps/api/.env` / `.env.*.local` |
+| 依赖 | `node_modules/` |
+| 运行数据 | `data/` |
+| 本地 agent 状态 | `.reasonix/` / `reasonix.toml` / `.workbuddy/` |
+| 日志/调试 | `*.log` / `pilot-*.log` / `_*.json` / `_rid.txt` / `debug/` |
+| 一次性脚本 | `fix_uuid.js` / `fix_uuid2.js` / `setup-test-review.js` |
+
+提交前校验入库清单为空：
+```bash
+git ls-files | grep -iE '\.env$|node_modules|^data/|\.reasonix|\.workbuddy|\.log$|_rid\.txt|_diag\.json|_r1\.json|fix_uuid|setup-test-review'
+# → 期望：无输出
+```
+若误暂存：`git restore --staged <file>` 并确认其被 `.gitignore` 排除；已推送则按 8.1 方式回退。
+
+### 9.5 文档落点（强制，P1）
+
+- 每个 Sprint 的协作产物（Contract / Review / Gate / 规则 / 冻结文档）**必须**入 `docs/coordination/`，命名遵循 §4（`Sprint_X.Y_*.md`）。
+- 演示素材/截图 → `docs/demo/`；实现记录 → `docs/implementation/`；路线图 → `docs/roadmap/`。
+- 禁止散落根目录或临时目录。
+
+### 9.6 代码改动须记录验证命令（强制，P1）
+
+- 任何代码改动 Sprint，产出文档必须记录可复现的验证命令与结果：`tsc --noEmit` 错误数、smoke 脚本通过数、关键 `curl` 响应（状态码 / `Content-Disposition` / 字节数）。
+- 纯文档 Sprint 无代码改动，不强制 smoke/tsc，但需声明"纯文档、未改代码"。
+- 无验证命令 = Gate 不受理（同 §6.3）。
+
+### 9.7 提交纪律（供代码 Sprint 参考）
+
+1. 主干协作：直接在 `main` 工作并快进推送；实验用短生命周期分支，合入前 rebase 到最新 `main`。
+2. 提交粒度：每 Sprint 一个逻辑提交，message 含 Sprint 编号与范围。
+3. 提交前自检：`git status` + 入库清单 grep（§9.4）+ 敏感扫描（`sk-` / `Bearer <20+>` / `pris[*]{3,}`）+ `tsc`/smoke。
+4. 推送：`git push`；若被拒（非快进），先 `git pull --ff-only` 再推，**禁止 `--force` 到 `main`**。
+
+---
+
 ## 附录 A：快速 checklist（供 Gate 使用）
 
 - [ ] reasonix 是否输出了显式 Contract（接口 + DTO + 状态机 + 边界）？
