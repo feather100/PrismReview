@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+uv.lock
+
+# Prisma
+apps/api/prisma/migrations/
+
+# MinIO data
+data/minio/
+
+# Logs
+*.log
+
+# ── Sprint 8.1 GitHub bootstrap additions ──
+
+# Local env files (NEVER commit real secrets)
+apps/api/.env
+
+# Runtime / debug artifacts
+data/
+_*.json
+_rid.txt
+
+# Local agent / tooling state (never commit)
+.reasonix/
+.workbuddy/
+reasonix.toml
+
+# Temporary pilot / debug outputs
+pilot-*.log
+*.debug
+debug/
+
+# Local one-off dev/debug scripts (not part of MVP source)
+fix_uuid.js
+fix_uuid2.js
+setup-test-review.js

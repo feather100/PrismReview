@@ -1,0 +1,26 @@
+[project]
+name = "prismreview-worker"
+version = "0.1.0"
+description = "PrismReview AI Agent Worker — Document parsing, Embedding, Agent Orchestration"
+requires-python = ">=3.11"
+dependencies = [
+    "celery>=5.3.0",
+    "redis>=5.0.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "langchain>=0.2.0",
+    "langchain-openai>=0.1.0",
+    "langchain-anthropic>=0.1.0",
+    "langchain-community>=0.2.0",
+    "unstructured[pdf]>=0.14.0",
+    "pydantic>=2.0.0",
+    "openai>=1.20.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:Backend"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

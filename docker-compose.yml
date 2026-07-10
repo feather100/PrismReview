@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  postgres:
+    # Sprint 1 Mock: temporary deviation from predesign.
+    # pgvector extension is NOT available on postgres:16-alpine.
+    # Before RAG Spike, switch to pgvector/pgvector:pg16 or install vector extension.
+    # See docs/sprint-0-kickoff.md §4.5 for recovery plan.
+    image: postgres:16-alpine
+    container_name: prismreview-postgres
+    environment:
+      POSTGRES_USER: prismreview
+      POSTGRES_PASSWORD: prismreview
+      POSTGRES_DB: prismreview
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./data/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prismreview"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: prismreview-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: prismreview-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: prismreview
+      MINIO_ROOT_PASSWORD: prismreview-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

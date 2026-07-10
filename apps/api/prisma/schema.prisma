@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Tenant & Auth
+// ============================================================
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  region    String   @default("cn")       // cn | global
+  status    String   @default("active")   // active | suspended
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users          User[]
+  departments    Department[]
+  agentRoles     AgentRole[]
+  knowledgeDocs  KnowledgeDocument[]
+  knowledgeChunks KnowledgeChunk[]
+  reviews        Review[]
+  auditLogs      AuditLog[]
+  businessEvents BusinessEvent[]
+
+  @@map("tenants")
+}
+
+model Department {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  users  User[]
+
+  @@map("departments")
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  departmentId  String?  @map("department_id") @db.Uuid
+  email         String   @unique
+  name          String
+  passwordHash  String   @map("password_hash")
+  platformRole  String   @default("user") @map("platform_role") // super_admin | enterprise_admin | department_admin | user
+  status        String   @default("active")                     // active | disabled
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  reviews    Review[]
+
+  @@map("users")
+}
+
+// ============================================================
+// Agent Roles
+// ============================================================
+
+model AgentRole {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  departmentId    String?  @map("department_id") @db.Uuid
+  name            String
+  code            String                   // e.g. "CTO", "CFO"
+  type            String   @default("preset") // preset | custom | marketplace
+  status          String   @default("enabled") // enabled | disabled | deleted
+  activeVersionId String?  @unique @map("active_version_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant             @relation(fields: [tenantId], references: [id])
+  versions      AgentRoleVersion[]
+  activeVersion AgentRoleVersion?  @relation("ActiveVersion", fields: [activeVersionId], references: [id])
+
+  @@map("agent_roles")
+}
+
+model AgentRoleVersion {
+  id                     String   @id @default(uuid()) @db.Uuid
+  roleId                 String   @map("role_id") @db.Uuid
+  version                Int
+  systemPrompt           String   @map("system_prompt")
+  dimensions             Json     @default("[]")
+  outputSchema           Json     @map("output_schema")
+  knowledgeCollectionIds String[] @map("knowledge_collection_ids")
+  createdBy              String   @map("created_by") @db.Uuid
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  role          AgentRole @relation(fields: [roleId], references: [id])
+  activeForRole AgentRole? @relation("ActiveVersion")
+
+  @@unique([roleId, version])
+  @@map("agent_role_versions")
+}
+
+// ============================================================
+// Knowledge Base
+// ============================================================
+
+model KnowledgeDocument {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  scope     String   @default("global")    // global | role | department
+  ownerRoleId String? @map("owner_role_id") @db.Uuid
+  filename   String
+  mimeType   String   @map("mime_type")
+  sizeBytes  BigInt   @map("size_bytes")
+  storageUri String   @map("storage_uri")
+  status     String   @default("uploading") // uploading | parsing | chunking | indexing | ready | parse_failed | index_failed
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  chunks KnowledgeChunk[]
+
+  @@index([tenantId, status])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id            String   @id @default(uuid()) @db.Uuid
+  documentId    String   @map("document_id") @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  content       String
+  metadata      Json     @default("{}")
+  reviewStatus  String   @default("pending_review") @map("review_status") // pending_review | approved | rejected | deprecated
+  embeddingRef  String?  @map("embedding_ref")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id])
+  tenant   Tenant            @relation(fields: [tenantId], references: [id])
+
+  @@index([documentId])
+  @@index([tenantId])
+  @@map("knowledge_chunks")
+}
+
+// ============================================================
+// Review
+// ============================================================
+
+model Review {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  createdBy     String   @map("created_by") @db.Uuid
+  title         String
+  objective     String
+  inputType     String   @default("text")   // file | text | both
+  mode          String   @default("round_robin") // round_robin | free_debate | blind_consensus | red_blue
+  status        String   @default("draft")  // draft | diagnosing | ready | running | interrupted | summarizing | completed | failed | archived
+  diagnosis     Json?
+  roleSelection  Json?   @map("role_selection")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id])
+  creator  User          @relation(fields: [createdBy], references: [id])
+  turns    ReviewTurn[]
+  opinions ReviewOpinion[]
+  report   Report?
+
+  @@index([tenantId, createdBy, status])
+  @@map("reviews")
+}
+
+model ReviewTurn {
+  id            String    @id @default(uuid()) @db.Uuid
+  reviewId      String    @map("review_id") @db.Uuid
+  turnIndex     Int       @map("turn_index")
+  phase         String?
+  roleVersionId String    @map("role_version_id") @db.Uuid
+  status        String    @default("queued") // queued | retrieving | thinking | speaking | completed | timeout | failed | skipped | interrupted_pending
+  startedAt     DateTime? @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  review   Review           @relation(fields: [reviewId], references: [id])
+  opinions ReviewOpinion[]
+
+  @@index([reviewId, turnIndex])
+  @@map("review_turns")
+}
+
+model ReviewOpinion {
+  id               String    @id @default(uuid()) @db.Uuid
+  reviewId         String    @map("review_id") @db.Uuid
+  turnId           String    @map("turn_id") @db.Uuid
+  dimension        String
+  riskLevel        String    @map("risk_level") // high | medium | low | info
+  issue            String
+  recommendation   String
+  citations        Json      @default("[]")
+  confidenceScore  Int       @map("confidence_score")
+  reasoningSummary String?   @map("reasoning_summary")
+  modelOutputRef   String?   @map("model_output_ref")
+  feedback         String?   // valuable | adopted | false_positive | ignored
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  review Review     @relation(fields: [reviewId], references: [id])
+  turn   ReviewTurn @relation(fields: [turnId], references: [id])
+
+  @@index([reviewId])
+  @@map("review_opinions")
+}
+
+// ============================================================
+// Report & Action Items
+// ============================================================
+
+model Report {
+  id       String   @id @default(uuid()) @db.Uuid
+  reviewId String   @unique @map("review_id") @db.Uuid
+  status   String   @default("generating") // generating | ready | failed | human_review_required
+  content  Json?
+  htmlUri  String?  @map("html_uri")
+  pdfUri   String?  @map("pdf_uri")
+  docxUri  String?  @map("docx_uri")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  review      Review       @relation(fields: [reviewId], references: [id])
+  actionItems ActionItem[]
+
+  @@map("reports")
+}
+
+model ActionItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  reviewId    String    @map("review_id") @db.Uuid
+  reportId    String    @map("report_id") @db.Uuid
+  title       String
+  description String?
+  ownerId     String?   @map("owner_id") @db.Uuid
+  priority    String    @default("p2") // p0 | p1 | p2 | p3
+  status      String    @default("open") // open | assigned | in_progress | blocked | done | canceled
+  dueDate     DateTime? @map("due_date")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  report Report @relation(fields: [reportId], references: [id])
+
+  @@index([reportId])
+  @@map("action_items")
+}
+
+// ============================================================
+// Observability
+// ============================================================
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String                    // resource.action e.g. "review.created"
+  resource   String
+  resourceId String?  @map("resource_id")
+  detail     Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model BusinessEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  eventName  String   @map("event_name")
+  properties Json     @default("{}")
+  requestId  String?  @map("request_id")
+  sessionId  String?  @map("session_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, eventName, createdAt])
+  @@map("business_events")
+}

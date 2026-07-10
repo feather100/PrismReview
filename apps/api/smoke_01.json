@@ -1,0 +1,1 @@
+{"id":"00000000-0000-0000-0000-000000000001","name":"Mock User","email":"mock@prismreview.dev","tenantId":"00000000-0000-0000-0000-000000000001","platformRole":"enterprise_admin","permissions":["review.create","review.read.all","role.read","role.write","kb.upload","kb.read","admin.access","audit.read"]}
