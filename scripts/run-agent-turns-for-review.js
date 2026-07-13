@@ -164,6 +164,11 @@ async function main() {
         roleVersionId: turn.roleVersionId,
         status: 'retrieving',
         startedAt: new Date(),
+        // P1 additive schema (Sprint 9.2): round + idempotencyKey are now required.
+        // Historical turns are round-1; the idempotency check itself is a 9.3 runtime
+        // concern, so here we just satisfy the NOT NULL + UNIQUE constraint.
+        round: 1,
+        idempotencyKey: `${reviewId}::${turn.roleVersionId}::1`,
       },
     });
 

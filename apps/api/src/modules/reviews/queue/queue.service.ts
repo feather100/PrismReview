@@ -210,6 +210,9 @@ export class QueueService implements OnModuleDestroy {
     }
 
     // Create ReviewTurn
+    // P1 (9.2) additive: supply new required columns (idempotencyKey + round).
+    // round defaults to 1 (round-1); idempotencyKey = `${reviewId}::${roleVersionId}::${round}`.
+    // NOTE: actual idempotency skip logic + round-2 debate remain 9.3 (runtime) scope.
     const reviewTurn = await this.prisma.reviewTurn.create({
       data: {
         reviewId,
@@ -218,6 +221,8 @@ export class QueueService implements OnModuleDestroy {
         roleVersionId,
         status: 'queued',
         startedAt: new Date(),
+        round: 1,
+        idempotencyKey: `${reviewId}::${roleVersionId}::1`,
       },
     });
 

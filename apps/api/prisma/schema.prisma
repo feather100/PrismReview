@@ -160,14 +160,20 @@ model Review {
   status        String   @default("draft")  // draft | diagnosing | ready | running | interrupted | summarizing | completed | failed | archived
   diagnosis     Json?
   roleSelection  Json?   @map("role_selection")
+  // --- P1 (9.2) additive: checkpoint / resume support ---
+  currentRound  Int     @default(1) @map("current_round")   // current round (1-based)
+  currentNodeId String? @map("current_node_id")            // current graph node (resume anchor)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  tenant   Tenant        @relation(fields: [tenantId], references: [id])
-  creator  User          @relation(fields: [createdBy], references: [id])
-  turns    ReviewTurn[]
-  opinions ReviewOpinion[]
-  report   Report?
+  tenant            Tenant              @relation(fields: [tenantId], references: [id])
+  creator           User                @relation(fields: [createdBy], references: [id])
+  turns             ReviewTurn[]
+  opinions          ReviewOpinion[]
+  report            Report?
+  // --- P1 (9.2) additive: reverse relations for new audit/checkpoint tables ---
+  checkpoints       ReviewCheckpoint[]
+  moderatorDecisions ModeratorDecision[]
 
   @@index([tenantId, createdBy, status])
   @@map("reviews")
@@ -183,6 +189,10 @@ model ReviewTurn {
   startedAt     DateTime? @map("started_at")
   completedAt   DateTime? @map("completed_at")
   createdAt     DateTime  @default(now()) @map("created_at")
+  // --- P1 (9.2) additive: round + idempotency + opinion schema version ---
+  round          Int    @default(1) @map("round")                 // P1: round (1-based)
+  idempotencyKey String @unique @map("idempotency_key")           // P1: ${reviewId}::${roleVersionId}::${round}
+  schemaVersion  String @default("1.0") @map("schema_version")     // P1: opinion schema version (aligned with ReviewOpinion)
 
   review   Review           @relation(fields: [reviewId], references: [id])
   opinions ReviewOpinion[]
@@ -205,6 +215,9 @@ model ReviewOpinion {
   modelOutputRef   String?   @map("model_output_ref")
   feedback         String?   // valuable | adopted | false_positive | ignored
   createdAt        DateTime  @default(now()) @map("created_at")
+  // --- P1 (9.2) additive: opinion schema version + round (for report aggregation) ---
+  schemaVersion    String @default("1.0") @map("schema_version") // P1: aligned with §4 StructuredOpinion
+  round            Int?   @map("round")                           // P1: redundant column for report aggregation (source of truth = ReviewTurn.round)
 
   review Review     @relation(fields: [reviewId], references: [id])
   turn   ReviewTurn @relation(fields: [turnId], references: [id])
@@ -290,4 +303,40 @@ model BusinessEvent {
 
   @@index([tenantId, eventName, createdAt])
   @@map("business_events")
+}
+
+// ============================================================
+// P1 (9.2) Orchestrator Spine — additive schema
+// ============================================================
+
+// Checkpoint persistence (Contract §6): resume anchor for graph runtime.
+model ReviewCheckpoint {
+  id        String   @id @default(uuid()) @db.Uuid
+  reviewId  String   @map("review_id") @db.Uuid
+  nodeId    String   @map("node_id")          // graph node after transition (= state)
+  stateJson String   @map("state_json")       // ReviewState serialized (JSON text)
+  sequence  Int                             // monotonically increasing, latest wins
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id])
+
+  @@unique([reviewId, sequence])
+  @@index([reviewId])
+  @@map("review_checkpoints")
+}
+
+// Moderator decision audit (Contract §5.1 / §7.5).
+model ModeratorDecision {
+  id              String   @id @default(uuid()) @db.Uuid
+  reviewId        String   @map("review_id") @db.Uuid
+  round           Int      @map("round")
+  decisionType    String   @map("decision_type") // advance_round | continue_debate | converge | force_stop | terminate_proposal
+  reasoning       String
+  ruleCheckResult Json     @map("rule_check_result") // RuleCheckResult serialized
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id])
+
+  @@index([reviewId, round])
+  @@map("moderator_decisions")
 }

@@ -7,17 +7,23 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 9.1
-- **Phase**: P1 Orchestrator Spine Contract（workbuddy-docs 纯文档，把 9.0 锁定的 P1 范围展开为 Backend Contract）
-- **Gate Status**: In Progress（纯文档，符合快速 Gate 触发条件 §7.1；待 Codex 走 fast-gate 审后推进）
+- **Current Sprint**: Sprint 9.2
+- **Phase**: P1 Additive Schema Migration（workbuddy-coder 实现；仅加性 schema + 迁移 + 历史回填，不动运行时/枚举/状态机）
+- **Gate Status**: In Progress（标准 Gate，§13.2 声明；代码 + 证据就绪，待 Codex 交 `workbuddy-review` 复审）
 - **Last Updated**: 2026-07-13
-- **Owner**: workbuddy-docs
+- **Owner**: workbuddy-coder
 
 ---
 
 ## 当前目标
 
-把 `Sprint_9.0_Product_Roadmap_Reset.md` 锁定的 P1 范围（§12）展开为可实现的 Backend Contract（workbuddy-docs 纯文档，不实现）：
+在 9.1 Contract（§6 / §7.2–7.5）基础上实做**加性（additive-only）schema 迁移**（workbuddy-coder 实现，标准 Gate）：
+- 新增 `ReviewCheckpoint` / `ModeratorDecision` 两表；`ReviewTurn` / `ReviewOpinion` / `Review` 仅加列（`round` / `idempotencyKey` / `schemaVersion` / `currentRound` / `currentNodeId` + 反向关系）；
+- 生成并实跑 Prisma 迁移 `20260713121800_add_orchestrator_spine_schema`，回填历史 324 行 `review_turns`（NOT NULL + UNIQUE 约束可被满足）；
+- 修复 2 个 `reviewTurn.create` 写入点（含任务原假设遗漏的 standalone runner 脚本），使加性约束下系统不破；
+- tsc 0 errors；Docker 全栈实跑；seed + 3 路冒烟（runtime / route A / route B）全绿；密钥扫描干净；
+- 产出 `docs/coordination/Sprint_9.2_Schema_Migration_Backend.md`（证据）；**未执行 git commit / push**（标准 Gate 红线，待复审）。
+引用 9.1 Contract（`10cec39` 基线之上）+ 现有代码 `apps/api/prisma/schema.prisma`、`queue.service.ts`、`scripts/run-agent-turns-for-review.js`。**不触碰 `REVIEW_STATUS_FLOW`、不改枚举、不实现 graph runtime / Moderator / round-2（均属 9.3）。**
 - 新增 `docs/coordination/Sprint_9.1_Orchestrator_Spine_Contract.md`（主文档：状态机 / graph runtime 接口 / turn schema / Moderator 契约 / checkpoint schema / Prisma delta / API 契约保留 / 模块边界 / round-2 mock debater / 技术边界 / 验证期望 / Gate 声明，共 13 节）；
 - 滚动本文件到 9.1，并将 9.0 行从 In Progress 推进为 **Go**（commit `bbed578`，已推送），新增 9.1 In Progress 行。
 引用 9.0 已 Go 的架构权威（`bbed578`）+ 现有代码 `apps/api/prisma/schema.prisma`、`reviews.service.ts`、`queue.service.ts`、`scripts/run-agent-turns-for-review.js`、`scripts/setup-demo-review.js`。**不改业务代码、不运行模型、不写密钥、未执行 git commit。**
@@ -77,4 +83,5 @@
 | **8.2** | **Go**（Repo Operating Rules 固化，已写入协议 §9；文档随 8.3 提交 `9dbcf97` 入库） |
 | **8.3** | **Go**（Documentation Sync Commit；6 个 coordination 文档提交并推送 `9dbcf97`，零业务改动、无真实 Key；workbuddy 快速 Gate 复审通过） |
 | **9.0** | **Go**（Architecture Refactor Kickoff；纯文档主文档 `Sprint_9.0_Product_Roadmap_Reset.md` + 本文件滚动到 9.0；fast-gate 复审通过，commit `bbed578` 已推送 `origin/main`） |
-| **9.1** | **In Progress**（P1 Orchestrator Spine Contract；纯文档 Contract `Sprint_9.1_Orchestrator_Spine_Contract.md` + 本文件滚动到 9.1；符合快速 Gate §7.1，待 Codex 走 fast-gate 审后推进；9.2 实现将走标准 Gate） |
+| **9.1** | **Go**（P1 Orchestrator Spine Contract；纯文档 Contract `Sprint_9.1_Orchestrator_Spine_Contract.md` + 本文件滚动到 9.1；快速 Gate §7.1 复审通过，基线锚定 `10cec39`，9.2 实现走标准 Gate） |
+| **9.2** | **In Progress**（P1 Additive Schema Migration；workbuddy-coder 实现 2 新表 + 3 既模型加列 + Prisma 迁移实跑 + 历史回填 + 写入点修复；tsc 0 errors、Docker 全栈实跑、seed + 3 路冒烟全绿、密钥扫描干净；证据文档 `Sprint_9.2_Schema_Migration_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |
