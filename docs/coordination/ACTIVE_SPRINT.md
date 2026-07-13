@@ -7,8 +7,8 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 9.0
-- **Phase**: Architecture Refactor Kickoff（workbuddy-docs 纯文档，architecture lock + 6 阶段路线图固化）
+- **Current Sprint**: Sprint 9.1
+- **Phase**: P1 Orchestrator Spine Contract（workbuddy-docs 纯文档，把 9.0 锁定的 P1 范围展开为 Backend Contract）
 - **Gate Status**: In Progress（纯文档，符合快速 Gate 触发条件 §7.1；待 Codex 走 fast-gate 审后推进）
 - **Last Updated**: 2026-07-13
 - **Owner**: workbuddy-docs
@@ -17,28 +17,30 @@
 
 ## 当前目标
 
-把 Codex（总协调）与用户已锁定的三项承重架构决策固化为单一事实来源（architecture lock + 6 阶段路线图），供后续 9.1+ 代码 Sprint 遵循（workbuddy-docs 纯文档，不改业务代码）：
-- 新增 `docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md`（主文档：三项决策原样 + Graph 脊柱/Code 叶子 + Moderator 硬闸 + 9 模块架构 + 模型路由 + Memory 分层 + Prompt 架构 + 现状映射 + P0–P6 路线图 + P1 范围 + 红线/ Gate 自检）；
-- 滚动本文件到 9.0，并补 8.3 Go 行（当前 Gate 表缺失）+ 9.0 In Progress 行。
-引用 8.3 已完成的 MVP Demo RC（commit `9dbcf97`）+ `docs/demo/MVP_Demo_Runbook.md` 现状锚点。**不改业务代码、不运行模型、不写密钥、未执行 git commit。**
+把 `Sprint_9.0_Product_Roadmap_Reset.md` 锁定的 P1 范围（§12）展开为可实现的 Backend Contract（workbuddy-docs 纯文档，不实现）：
+- 新增 `docs/coordination/Sprint_9.1_Orchestrator_Spine_Contract.md`（主文档：状态机 / graph runtime 接口 / turn schema / Moderator 契约 / checkpoint schema / Prisma delta / API 契约保留 / 模块边界 / round-2 mock debater / 技术边界 / 验证期望 / Gate 声明，共 13 节）；
+- 滚动本文件到 9.1，并将 9.0 行从 In Progress 推进为 **Go**（commit `bbed578`，已推送），新增 9.1 In Progress 行。
+引用 9.0 已 Go 的架构权威（`bbed578`）+ 现有代码 `apps/api/prisma/schema.prisma`、`reviews.service.ts`、`queue.service.ts`、`scripts/run-agent-turns-for-review.js`、`scripts/setup-demo-review.js`。**不改业务代码、不运行模型、不写密钥、未执行 git commit。**
 
 ---
 
 ## 当前输入文档
 
-- `docs/coordination/ACTIVE_SPRINT.md`（上一跳 8.2，本次滚动到 9.0）
-- `docs/coordination/AGENT_COORDINATION_PROTOCOL.md`（§7 快速 Gate / §9 GitHub 工作规则）
-- `docs/coordination/Sprint_8.3_Workbuddy_Review.md`（最近 Gate Go）
-- `docs/coordination/Sprint_8.3_Documentation_Sync_Commit.md`（commit `9dbcf97`）
-- `docs/coordination/MVP_RELEASE_SNAPSHOT.md`（MVP 锚点）
-- `docs/demo/MVP_Demo_Runbook.md`（现状能力锚点）
+- `docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md`（架构权威，9.0 Go，`bbed578`）
+- `docs/coordination/ACTIVE_SPRINT.md`（上一跳 9.0，本次滚动到 9.1）
+- `docs/coordination/AGENT_COORDINATION_PROTOCOL.md`（§2 标准流程 / §4 命名 / §5 红线 / §6 Gate / §7 快速 Gate）
+- `apps/api/prisma/schema.prisma`（现有 Review / ReviewTurn / ReviewOpinion 模型 — Contract 的 schema delta 基于此）
+- `apps/api/src/modules/reviews/reviews.service.ts`（现有 `REVIEW_STATUS_FLOW`、diagnose/start/summarize/getReport/exportMarkdown）
+- `apps/api/src/modules/reviews/queue/queue.service.ts`（现有 QueueService：review.start → agent.turn.execute → meeting.complete、idempotent skip、applyPilotRoleCap）
+- `scripts/run-agent-turns-for-review.js` / `scripts/setup-demo-review.js`（现有 runner / demo 脚本）
+- `docs/demo/MVP_Demo_Runbook.md`（API 契约保留边界）
 
 ---
 
 ## 当前输出文档
 
-- `docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md`（本次主文档，新增）
-- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 9.0）
+- `docs/coordination/Sprint_9.1_Orchestrator_Spine_Contract.md`（本次主文档，新增）
+- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 9.1）
 
 ---
 
@@ -47,9 +49,9 @@
 - 不改业务代码（本次纯文档，仅新增/更新文档；未碰任何 `.ts`/`.tsx`/`.prisma`）
 - 不运行模型（无模型调用）
 - 不写密钥（仅描述 env 守卫语义，未写任何真实 Key）
-- 不动 Prisma schema / 不改状态机实现（仅描述目标架构）
+- **不动 Prisma schema / 不改状态机实现**：本 Sprint 仅**声明** schema delta 与目标状态机（§1/§7），**实施**在 9.2 走标准 Gate（协议 §5.2/§5.4）
 - 不执行提交/推送（文档就绪后回报 Codex，由 Codex 走 fast-gate 再决定）
-- 文档落点正确（主文档 `docs/roadmap/`、本文件 `docs/coordination/`）
+- 文档落点正确（主文档 `docs/coordination/`、本文件同目录）
 
 ---
 
@@ -74,4 +76,5 @@
 | **8.1** | **Go**（GitHub 引导完成并推送 `origin/main` `a4da677…`；`.gitignore` 全覆盖；无真实 Key/业务改动；快速 Gate 复审通过） |
 | **8.2** | **Go**（Repo Operating Rules 固化，已写入协议 §9；文档随 8.3 提交 `9dbcf97` 入库） |
 | **8.3** | **Go**（Documentation Sync Commit；6 个 coordination 文档提交并推送 `9dbcf97`，零业务改动、无真实 Key；workbuddy 快速 Gate 复审通过） |
-| **9.0** | **In Progress**（Architecture Refactor Kickoff；纯文档主文档 + 本文件滚动到 9.0；符合快速 Gate §7.1，待 Codex 走 fast-gate 审后推进） |
+| **9.0** | **Go**（Architecture Refactor Kickoff；纯文档主文档 `Sprint_9.0_Product_Roadmap_Reset.md` + 本文件滚动到 9.0；fast-gate 复审通过，commit `bbed578` 已推送 `origin/main`） |
+| **9.1** | **In Progress**（P1 Orchestrator Spine Contract；纯文档 Contract `Sprint_9.1_Orchestrator_Spine_Contract.md` + 本文件滚动到 9.1；符合快速 Gate §7.1，待 Codex 走 fast-gate 审后推进；9.2 实现将走标准 Gate） |
