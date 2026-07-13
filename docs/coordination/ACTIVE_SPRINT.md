@@ -7,8 +7,8 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 9.3
-- **Phase**: P1 Enum Migration + Ref Update（workbuddy-coder 实现；枚举物理重命名 §7.6 + 前后端引用更新 + idempotencyKey 回填修正，不实现 graph runtime/Moderator/round-2/checkpoint）
+- **Current Sprint**: Sprint 9.4
+- **Phase**: P1 Orchestrator Spine（single-round）（workbuddy-coder 实现；自研 graph runtime + ReviewOrchestrator 包装 QueueService + round-1 + mock Moderator（仅 converge）+ checkpoint/resume + opinion 校验 + turn 幂等；不实现 round-2/继续辩论/多轮/真 LLM/ModelAdapter(P2)/Memory·Prompt(P3)/Tool·HITL(P4)）
 - **Gate Status**: In Progress（标准 Gate；代码 + 证据就绪，待 Codex 交 `workbuddy-review` 复审）
 - **Last Updated**: 2026-07-13
 - **Owner**: workbuddy-coder
@@ -17,7 +17,21 @@
 
 ## 当前目标
 
-在 9.1 Contract（§6 / §7.2–7.5）基础上实做**加性（additive-only）schema 迁移**（workbuddy-coder 实现，标准 Gate）：
+在 9.1 Contract（§2–§6 类型 / §7 schema delta / §9.1 包装语义）+ 9.2（schema 已加好 `ReviewCheckpoint`/`ModeratorDecision`/`ReviewTurn.round`/`idempotencyKey`/`Review.currentRound`/`currentNodeId`）+ 9.3（枚举物理重命名就位）基础上，实做 **P1 编排脊柱（single-round）**（workbuddy-coder 实现，标准 Gate）：
+
+- 新增 `apps/api/src/modules/reviews/orchestrator/` 模块（graph-runtime / opinion / moderator / idempotency / hard-gates / postgres-checkpointer / review-orchestrator / index），落地 Contract §2–§6 全部类型与契约；
+- `ReviewOrchestrator` **包装**既有 `QueueService`（不替换）：经 `queue.completionHook` 注入回调，turn 全部终态后触发 `handleTurnsComplete` → mock Moderator `converge` → `completed`；每节点 `checkpointer.save`；
+- round-1 派发走 `QueueService.enqueue('review.start')`（既有 `executeReviewStart`/`executeAgentTurn` 内部含 DB 幂等 + 每评审员硬闸，零重写）；
+- mock Moderator（仅 converge，单轮无 round-2/继续辩论）+ 硬闸（maxRounds=3 / maxTurnsPerReviewer=3 / minRounds=1 / maxTokens=200000 / maxCost=0）+ 每条决策落 `ModeratorDecision` 审计；
+- turn 幂等按**语义元组** `(reviewId, roleVersionId, round)` 查询（Codex 指令 1，CRITICAL），天然覆盖 3 段 `${rid}::${rvid}::${round}` 与 4 段 `${rid}::${rvid}::${round}::${N}` 键，不依赖 idempotencyKey 字符串相等；
+- opinion schema 运行校验（§4.2：schemaVersion 正则 / dimension / riskLevel 枚举 / issue / recommendation / citations / confidenceScore[0,100] 整数 / modelOutputRef 可 JSON.parse），失败 → turn failed + 失败存根；
+- checkpoint/resume：Postgres `ReviewCheckpoint`（sequence 单调，load 取最大 = resume 锚点）；
+- `queue.service.ts` 泛化 `applyPilotRoleCap` 语义为 `max_turns_per_reviewer`（硬闸 `shouldDispatchTurn`），与 §5.2 对齐；
+- 前端零改动（API 契约保留）；默认 mock（max_cost_per_review=0，不调真实 LLM）；
+- 验证：`apps/api/scripts/verify-9.4-spine.js` 对真实 Prisma + 真实 QueueService/ReviewOrchestrator 实例断言 12/12（幂等 3/4 段 + round 过滤 + reviewer 作用域 / 硬闸第 4 个不派发 / checkpoint load 最新 / Moderator converge + 审计 passed=true / 全链路脊柱 completed + per-node checkpoint / resume from summarized → completed）；tsc(api+web) 0 errors；Docker 全栈实跑；migrate deploy up to date；密钥扫描干净（仅历史 docs 脱敏占位符，本次代码零命中）；
+- 产出 `docs/coordination/Sprint_9.4_Orchestrator_Spine_Backend.md`（实现记录）+ 本文件滚动到 9.4。**未执行 git commit / push**（标准 Gate 红线，待复审）。
+
+> 9.3 已 Go（commit `c7158ab`）：枚举物理重命名 + 前后端 6 处引用 + idempotencyKey 语义键回填修正，为 9.4 的 graph 脊柱铺好 `Review.status` 文本列与枚举集。9.5（round-2 debate / 多轮 / ModelAdapter(P2) 等）明确在范围外，本次未触碰。
 - 新增 `ReviewCheckpoint` / `ModeratorDecision` 两表；`ReviewTurn` / `ReviewOpinion` / `Review` 仅加列（`round` / `idempotencyKey` / `schemaVersion` / `currentRound` / `currentNodeId` + 反向关系）；
 - 生成并实跑 Prisma 迁移 `20260713121800_add_orchestrator_spine_schema`，回填历史 324 行 `review_turns`（NOT NULL + UNIQUE 约束可被满足）；
 - 修复 2 个 `reviewTurn.create` 写入点（含任务原假设遗漏的 standalone runner 脚本），使加性约束下系统不破；
@@ -45,19 +59,21 @@
 
 ## 当前输出文档
 
-- `docs/coordination/Sprint_9.1_Orchestrator_Spine_Contract.md`（本次主文档，新增）
-- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 9.1）
+- `docs/coordination/Sprint_9.1_Orchestrator_Spine_Contract.md`（9.1 主契约，9.4 的输入基线）
+- `docs/coordination/Sprint_9.4_Orchestrator_Spine_Backend.md`（本次实现记录，新增）
+- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 9.4）
 
 ---
 
 ## 红线
 
-- 不改业务代码（本次纯文档，仅新增/更新文档；未碰任何 `.ts`/`.tsx`/`.prisma`）
-- 不运行模型（无模型调用）
-- 不写密钥（仅描述 env 守卫语义，未写任何真实 Key）
-- **不动 Prisma schema / 不改状态机实现**：本 Sprint 仅**声明** schema delta 与目标状态机（§1/§7），**实施**在 9.2 走标准 Gate（协议 §5.2/§5.4）
-- 不执行提交/推送（文档就绪后回报 Codex，由 Codex 走 fast-gate 再决定）
-- 文档落点正确（主文档 `docs/coordination/`、本文件同目录）
+- **改业务代码（本次允许，标准 Gate 范围）**：新增 `orchestrator/` 模块、编辑 `queue.service.ts`/`reviews.service.ts`/`reviews.module.ts`；但**不写密钥**、**不改 schema**（9.2 已加列，9.4 零迁移）、**不改前端**（API 契约保留）、**不改 `REVIEW_STATUS_FLOW` 既有枚举语义**。
+- **不运行真实 LLM**：默认 mock provider（`max_cost_per_review=0`）；dev-only lmstudio 试点受 §7 守卫，本次不启用（`MODEL_PROVIDER` 保持 unset/mock）。
+- **不写密钥**：仅描述 env 守卫语义；`provider-adapter` 的 `Authorization` 头拼接处不打印；`MODEL_API_KEY` 不落库/不提交。
+- **不越界 9.5**：不实现 round-2 debate / `continue_debate` / 多轮循环 / `max_rounds` 全演练 / 真 LLM / `ModelAdapter`(P2) / `Memory`·`Prompt`(P3) / `Tool`·`HITL`(P4)。硬闸检查代码存在但单轮不触顶。
+- **不执行 git commit / push**：标准 Gate 红线，待 Codex 交 `workbuddy-review` 复审后再决定。
+- **文档落点正确**：本实现记录与 `ACTIVE_SPRINT.md` 同目录 `docs/coordination/`。
+- 密钥扫描净：扫描仅命中历史 `docs/coordination` 脱敏占位符（`sk-xxxxxxxxxxxxxxxx`），非真实 Key、非本次文件；本次新增/修改源码零命中。
 
 ---
 
@@ -85,4 +101,5 @@
 | **9.0** | **Go**（Architecture Refactor Kickoff；纯文档主文档 `Sprint_9.0_Product_Roadmap_Reset.md` + 本文件滚动到 9.0；fast-gate 复审通过，commit `bbed578` 已推送 `origin/main`） |
 | **9.1** | **Go**（P1 Orchestrator Spine Contract；纯文档 Contract `Sprint_9.1_Orchestrator_Spine_Contract.md` + 本文件滚动到 9.1；快速 Gate §7.1 复审通过，基线锚定 `10cec39`，9.2 实现走标准 Gate） |
 | **9.2** | **Go**（P1 Additive Schema Migration；2 新表 + 3 既模型加列 + Prisma 迁移实跑 + 历史回填 + 写入点修复；标准 Gate 复审通过，commit `ad5c6cf`） |
-| **9.3** | **In Progress**（P1 Enum Migration + Ref Update；workbuddy-coder 按 §7.6 物理重命名 `Review.status` 枚举 + 重写 `REVIEW_STATUS_FLOW` + 前后端 6 处引用更新 + 修正 9.2 idempotencyKey 回填为语义键；tsc(api+web) 0 errors、Docker 全栈实跑、migration deploy 成功、回填 0 行 PK、3 路冒烟全绿、密钥扫描干净；发现 `Review.status` 为 text 列非原生枚举（无 DROP VALUE 风险）；knowledge.service 的 `ready` 属 `KnowledgeDocument.status` 未越界；证据文档 `Sprint_9.3_Enum_Migration_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |
+| **9.3** | **Go**（P1 Enum Migration + Ref Update；workbuddy-coder 按 §7.6 物理重命名 `Review.status` 枚举 + 重写 `REVIEW_STATUS_FLOW` + 前后端 6 处引用更新 + 修正 9.2 idempotencyKey 回填为语义键；tsc(api+web) 0 errors、Docker 全栈实跑、migration deploy 成功、回填 0 行 PK、3 路冒烟全绿、密钥扫描干净；commit `c7158ab`，为 9.4 graph 脊柱铺好枚举环境） |
+| **9.4** | **In Progress**（P1 Orchestrator Spine（single-round）；workbuddy-coder 实现自研 graph runtime + ReviewOrchestrator（包装 QueueService）+ round-1 + mock Moderator（仅 converge）+ checkpoint/resume + opinion 校验 + turn 幂等（语义元组，覆盖 3/4 段键）；tsc(api+web) 0 errors、Docker 全栈实跑、migrate deploy up to date、`apps/api/scripts/verify-9.4-spine.js` 真实实例断言 12/12（幂等/硬闸/checkpoint/resume/审计/全链路脊柱）、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.4_Orchestrator_Spine_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QueueService } from './queue/queue.service';
+import { ReviewOrchestrator } from './orchestrator';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ListReviewsQuery } from './dto/list-reviews-query.dto';
 import { ReviewResponseDto, DiagnosisResponseDto } from './dto/review-response.dto';
@@ -39,6 +40,7 @@ export class ReviewsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
+    private readonly orchestrator: ReviewOrchestrator,
   ) {}
 
   async createReview(dto: CreateReviewDto, user: any): Promise<ReviewResponseDto> {
@@ -181,9 +183,11 @@ export class ReviewsService {
       data: { status: 'running' },
     });
 
-    // Enqueue review.start job (Sprint 4.2 — in-memory mock queue)
+    // 走编排脊柱（P1 编排核心）：派发 round-1 并行 reviewer turns（包装 QueueService）
+    // + 每节点写 checkpoint；全部 turn 终态后由 QueueService.completionHook
+    // 触发 Moderator converge → completed。
     const sessionId = `session-${reviewId}`;
-    this.queueService.enqueue('review.start', { reviewId, sessionId });
+    await this.orchestrator.start(reviewId);
 
     return { sessionId, status: 'running' };
   }

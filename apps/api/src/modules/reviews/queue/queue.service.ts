@@ -1,5 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { findExistingTerminalTurn } from '../orchestrator/idempotency';
+import { shouldDispatchTurn, resolveHardGates } from '../orchestrator/hard-gates';
+import { validateOpinion, StructuredOpinion, RiskLevel } from '../orchestrator/opinion';
 
 interface QueueJob {
   id: string;
@@ -22,6 +25,13 @@ export class QueueService implements OnModuleDestroy {
   private processing = false;
   private timer: NodeJS.Timeout | null = null;
   private processedIds = new Set<string>();  // Idempotency tracking
+
+  /**
+   * 完成回调钩子（由 ReviewOrchestrator 在 onModuleInit 注入）。
+   * 当全部 turn 终态、meeting.complete 触发时，委派 orchestrator 走
+   * summarized(Moderator converge) → completed 脊柱。未注入时走 legacy 直接定终态。
+   */
+  completionHook?: (reviewId: string) => Promise<void>;
 
   private readonly MAX_RETRIES = 3;
   private readonly POLL_INTERVAL = 100; // ms
@@ -144,10 +154,23 @@ export class QueueService implements OnModuleDestroy {
     });
     const roleMap = new Map(dbRoles.map(r => [r.id, r]));
 
+    // 硬闸默认值来自 MODEL_PILOT_MAX_ROLES（默认 3），与 §5.2 对齐
+    const gates = resolveHardGates();
+
     for (const [i, role] of effectiveRoles.entries()) {
       const dbRole: any = roleMap.get(role.roleId);
       if (!dbRole) throw new Error(`Role ${role.roleId} not found or disabled`);
       if (!dbRole.activeVersionId) throw new Error(`Role "${dbRole.code}" has no activeVersionId`);
+
+      // 每评审员硬闸（泛化 MODEL_PILOT_MAX_ROLES）：同一 reviewer 已达上限则不派发。
+      // round-1 各评审员各发言一次 → 不触发；仅当同一 reviewer 被派发 > N 次时拦截。
+      const canDispatch = await shouldDispatchTurn(this.prisma, {
+        reviewId, roleVersionId: dbRole.activeVersionId, maxTurns: gates.maxTurnsPerReviewer,
+      });
+      if (!canDispatch) {
+        this.logger.warn(`Hard gate: reviewer ${dbRole.activeVersionId} reached max_turns_per_reviewer=${gates.maxTurnsPerReviewer}, skip dispatch`);
+        continue;
+      }
 
       const turnIndex = i + 1;
       const jobId = `agent.turn.execute.${reviewId}.${turnIndex}`;
@@ -200,12 +223,14 @@ export class QueueService implements OnModuleDestroy {
   private async executeAgentTurn(payload: any): Promise<void> {
     const { reviewId, turnIndex, roleId, roleCode, roleVersionId, objective } = payload;
 
-    // DB idempotency: check if this turn already completed
-    const existing = await this.prisma.reviewTurn.findFirst({
-      where: { reviewId, turnIndex, status: { in: ['completed', 'failed', 'timeout'] } },
+    // DB idempotency（Codex 指令 1）：按语义元组 (reviewId, roleVersionId, round) 查询，
+    // 天然覆盖 3 段键 `${reviewId}::${roleVersionId}::${round}` 与 4 段键
+    // `${reviewId}::${roleVersionId}::${round}::${N}`（9.3 消歧后缀）—— 不依赖 idempotencyKey 字符串相等。
+    const existing = await findExistingTerminalTurn(this.prisma, {
+      reviewId, roleVersionId, round: payload.round ?? 1,
     });
-    if (existing) {
-      this.logger.log(`Idempotent skip: turn ${turnIndex} for review ${reviewId.substring(0, 8)} already terminal`);
+    if (existing.found) {
+      this.logger.log(`Idempotent skip: turn for reviewer ${roleVersionId} round ${payload.round ?? 1} already terminal`);
       return;
     }
 
@@ -310,6 +335,41 @@ export class QueueService implements OnModuleDestroy {
       };
     }
 
+    // §4.2 opinion schema 运行校验。失败 → turn failed + failed opinion 存根（不阻塞整场，其他 turn 仍可完成）。
+    const opinionCandidate: StructuredOpinion = {
+      schemaVersion: '1.0',
+      reviewerId: roleVersionId,
+      round: payload.round ?? 1,
+      dimension: result.dimension,
+      riskLevel: result.riskLevel as RiskLevel,
+      issue: result.issue,
+      recommendation: result.recommendation,
+      citations: [],
+      confidenceScore: result.confidenceScore,
+      modelOutputRef: JSON.stringify(observability),
+    };
+    const validation = validateOpinion(opinionCandidate);
+    if (!validation.valid) {
+      this.logger.warn(`Opinion validation failed (${roleCode}): ${validation.errors.join('; ')}`);
+      await this.prisma.reviewTurn.update({
+        where: { id: reviewTurn.id },
+        data: { status: 'failed', completedAt: new Date() },
+      });
+      await this.prisma.reviewOpinion.create({
+        data: {
+          reviewId, turnId: reviewTurn.id,
+          dimension: String(opinionCandidate.dimension || '').slice(0, 200),
+          riskLevel: (opinionCandidate.riskLevel as string) || 'info',
+          issue: 'opinion validation failed',
+          recommendation: validation.errors.join('; ').slice(0, 500),
+          citations: [], confidenceScore: 0,
+          reasoningSummary: 'validateOpinion failed: ' + validation.errors.join('; ').slice(0, 180),
+          modelOutputRef: JSON.stringify({ providerSource: 'failed', validationError: true }),
+        },
+      });
+      throw new Error('NO_RETRY:opinion validation failed');
+    }
+
     // Write opinion with observability
     const opinion = await this.prisma.reviewOpinion.create({
       data: {
@@ -394,22 +454,20 @@ export class QueueService implements OnModuleDestroy {
       return;
     }
 
-    // Determine final status
-    let finalStatus: string;
-    if (completedCount === expectedCount) {
-      finalStatus = 'completed';
-    } else if (completedCount > 0) {
-      finalStatus = 'completed'; // partial success
-    } else {
-      finalStatus = 'failed';
+    // → 编排脊柱（single-round converge）。若已接线则委派 orchestrator 完成决策与落库。
+    if (this.completionHook) {
+      this.logger.log(`All ${terminalCount} turns terminal → delegating to orchestrator.handleTurnsComplete (review ${reviewId.substring(0, 8)})`);
+      await this.completionHook(reviewId);
+      return;
     }
 
+    // 兜底 legacy（未接线时）：按终态比例定终态
+    const finalStatus = completedCount > 0 ? 'completed' : 'failed';
     await this.prisma.review.update({
       where: { id: reviewId },
       data: { status: finalStatus },
     });
-
-    this.logger.log(`Review ${reviewId.substring(0, 8)} → ${finalStatus} (${completedCount}/${expectedCount} completed, ${failedCount} failed)`);
+    this.logger.log(`Review ${reviewId.substring(0, 8)} → ${finalStatus} (legacy, ${completedCount}/${expectedCount} completed, ${failedCount} failed)`);
   }
 
   onModuleDestroy() {
