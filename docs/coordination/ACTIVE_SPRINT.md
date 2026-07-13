@@ -7,48 +7,49 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 8.2
-- **Phase**: Repo Operating Rules（workbuddy-docs 纯文档，GitHub 主干协作规则固化）
-- **Gate Status**: In Progress（规则被协议采纳即推进；后续代码 Sprint 实际遵守时由 Gate 持续核查）
-- **Last Updated**: 2026-07-10
+- **Current Sprint**: Sprint 9.0
+- **Phase**: Architecture Refactor Kickoff（workbuddy-docs 纯文档，architecture lock + 6 阶段路线图固化）
+- **Gate Status**: In Progress（纯文档，符合快速 Gate 触发条件 §7.1；待 Codex 走 fast-gate 审后推进）
+- **Last Updated**: 2026-07-13
 - **Owner**: workbuddy-docs
 
 ---
 
 ## 当前目标
 
-把 GitHub 主干协作规则写清楚，避免后续 agent 在错误目录/分支/未同步状态下工作（workbuddy-docs 纯文档，不改业务代码）：
-- 新增 `Sprint_8.2_Repo_Operating_Rules.md`（七条强制规则 + 详解 + 提交纪律 + 红线核对）；
-- 更新 `AGENT_COORDINATION_PROTOCOL.md` 新增 §9 GitHub 工作规则（开工三连查 / 开工目录 / 禁止包装区 init / 忽略清单 / 文档落点 / 验证命令留痕 / 提交纪律）；
-- 滚动本文件到 8.2。
-引用 8.1 已建立的 `origin=feather100/PrismReview` + `main` + `.gitignore`。**不改业务代码、不运行模型、不写密钥。**
+把 Codex（总协调）与用户已锁定的三项承重架构决策固化为单一事实来源（architecture lock + 6 阶段路线图），供后续 9.1+ 代码 Sprint 遵循（workbuddy-docs 纯文档，不改业务代码）：
+- 新增 `docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md`（主文档：三项决策原样 + Graph 脊柱/Code 叶子 + Moderator 硬闸 + 9 模块架构 + 模型路由 + Memory 分层 + Prompt 架构 + 现状映射 + P0–P6 路线图 + P1 范围 + 红线/ Gate 自检）；
+- 滚动本文件到 9.0，并补 8.3 Go 行（当前 Gate 表缺失）+ 9.0 In Progress 行。
+引用 8.3 已完成的 MVP Demo RC（commit `9dbcf97`）+ `docs/demo/MVP_Demo_Runbook.md` 现状锚点。**不改业务代码、不运行模型、不写密钥、未执行 git commit。**
 
 ---
 
 ## 当前输入文档
 
-- `docs/coordination/Sprint_8.1_GitHub_Bootstrap.md`（Git 引导完成，已推送 `origin/main` `a4da677…`）
-- `docs/coordination/Sprint_8.1_Workbuddy_Review.md`（快速 Gate Go）
-- `docs/coordination/AGENT_COORDINATION_PROTOCOL.md`（本次待更新：新增 §9）
-- `docs/coordination/ACTIVE_SPRINT.md`（上一跳 7.5）
+- `docs/coordination/ACTIVE_SPRINT.md`（上一跳 8.2，本次滚动到 9.0）
+- `docs/coordination/AGENT_COORDINATION_PROTOCOL.md`（§7 快速 Gate / §9 GitHub 工作规则）
+- `docs/coordination/Sprint_8.3_Workbuddy_Review.md`（最近 Gate Go）
+- `docs/coordination/Sprint_8.3_Documentation_Sync_Commit.md`（commit `9dbcf97`）
+- `docs/coordination/MVP_RELEASE_SNAPSHOT.md`（MVP 锚点）
+- `docs/demo/MVP_Demo_Runbook.md`（现状能力锚点）
 
 ---
 
 ## 当前输出文档
 
-- `docs/coordination/Sprint_8.2_Repo_Operating_Rules.md`（本次规则主文档）
-- `docs/coordination/AGENT_COORDINATION_PROTOCOL.md`（滚动：新增 §9 GitHub 工作规则）
-- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 8.2）
+- `docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md`（本次主文档，新增）
+- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 9.0）
 
 ---
 
 ## 红线
 
-- 不改业务代码（本次纯文档，仅新增/更新文档）
+- 不改业务代码（本次纯文档，仅新增/更新文档；未碰任何 `.ts`/`.tsx`/`.prisma`）
 - 不运行模型（无模型调用）
-- 不写密钥（仅 `sk-...` 占位格式说明，未写任何真实 Key）
-- 不执行提交/推送（规则文档本身不要求提交；本 Sprint 仅写文档）
-- 文档落点正确（本文与协议更新均在 `docs/coordination/`）
+- 不写密钥（仅描述 env 守卫语义，未写任何真实 Key）
+- 不动 Prisma schema / 不改状态机实现（仅描述目标架构）
+- 不执行提交/推送（文档就绪后回报 Codex，由 Codex 走 fast-gate 再决定）
+- 文档落点正确（主文档 `docs/roadmap/`、本文件 `docs/coordination/`）
 
 ---
 
@@ -71,4 +72,6 @@
 | 7.4 | Go（本地 LM Studio dev-only E2E 15/15 PASS；鲁棒性 5/5；单 review ≤3；无泄漏） |
 | 7.5 | Go（Demo 就绪冻结；文档语义已锚定，标准 Demo 零 LLM 依赖、LM Studio 仅 dev-only ≤3 capped、付费 API 未启用） |
 | **8.1** | **Go**（GitHub 引导完成并推送 `origin/main` `a4da677…`；`.gitignore` 全覆盖；无真实 Key/业务改动；快速 Gate 复审通过） |
-| **8.2** | **In Progress**（Repo Operating Rules 固化；规则写入协议 §9 即推进，待后续代码 Sprint 实际遵守时由 Gate 持续核查） |
+| **8.2** | **Go**（Repo Operating Rules 固化，已写入协议 §9；文档随 8.3 提交 `9dbcf97` 入库） |
+| **8.3** | **Go**（Documentation Sync Commit；6 个 coordination 文档提交并推送 `9dbcf97`，零业务改动、无真实 Key；workbuddy 快速 Gate 复审通过） |
+| **9.0** | **In Progress**（Architecture Refactor Kickoff；纯文档主文档 + 本文件滚动到 9.0；符合快速 Gate §7.1，待 Codex 走 fast-gate 审后推进） |
