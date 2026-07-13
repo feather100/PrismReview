@@ -7,9 +7,9 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 9.2
-- **Phase**: P1 Additive Schema Migration（workbuddy-coder 实现；仅加性 schema + 迁移 + 历史回填，不动运行时/枚举/状态机）
-- **Gate Status**: In Progress（标准 Gate，§13.2 声明；代码 + 证据就绪，待 Codex 交 `workbuddy-review` 复审）
+- **Current Sprint**: Sprint 9.3
+- **Phase**: P1 Enum Migration + Ref Update（workbuddy-coder 实现；枚举物理重命名 §7.6 + 前后端引用更新 + idempotencyKey 回填修正，不实现 graph runtime/Moderator/round-2/checkpoint）
+- **Gate Status**: In Progress（标准 Gate；代码 + 证据就绪，待 Codex 交 `workbuddy-review` 复审）
 - **Last Updated**: 2026-07-13
 - **Owner**: workbuddy-coder
 
@@ -84,4 +84,5 @@
 | **8.3** | **Go**（Documentation Sync Commit；6 个 coordination 文档提交并推送 `9dbcf97`，零业务改动、无真实 Key；workbuddy 快速 Gate 复审通过） |
 | **9.0** | **Go**（Architecture Refactor Kickoff；纯文档主文档 `Sprint_9.0_Product_Roadmap_Reset.md` + 本文件滚动到 9.0；fast-gate 复审通过，commit `bbed578` 已推送 `origin/main`） |
 | **9.1** | **Go**（P1 Orchestrator Spine Contract；纯文档 Contract `Sprint_9.1_Orchestrator_Spine_Contract.md` + 本文件滚动到 9.1；快速 Gate §7.1 复审通过，基线锚定 `10cec39`，9.2 实现走标准 Gate） |
-| **9.2** | **In Progress**（P1 Additive Schema Migration；workbuddy-coder 实现 2 新表 + 3 既模型加列 + Prisma 迁移实跑 + 历史回填 + 写入点修复；tsc 0 errors、Docker 全栈实跑、seed + 3 路冒烟全绿、密钥扫描干净；证据文档 `Sprint_9.2_Schema_Migration_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |
+| **9.2** | **Go**（P1 Additive Schema Migration；2 新表 + 3 既模型加列 + Prisma 迁移实跑 + 历史回填 + 写入点修复；标准 Gate 复审通过，commit `ad5c6cf`） |
+| **9.3** | **In Progress**（P1 Enum Migration + Ref Update；workbuddy-coder 按 §7.6 物理重命名 `Review.status` 枚举 + 重写 `REVIEW_STATUS_FLOW` + 前后端 6 处引用更新 + 修正 9.2 idempotencyKey 回填为语义键；tsc(api+web) 0 errors、Docker 全栈实跑、migration deploy 成功、回填 0 行 PK、3 路冒烟全绿、密钥扫描干净；发现 `Review.status` 为 text 列非原生枚举（无 DROP VALUE 风险）；knowledge.service 的 `ready` 属 `KnowledgeDocument.status` 未越界；证据文档 `Sprint_9.3_Enum_Migration_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |

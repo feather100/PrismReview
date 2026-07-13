@@ -157,7 +157,9 @@ model Review {
   objective     String
   inputType     String   @default("text")   // file | text | both
   mode          String   @default("round_robin") // round_robin | free_debate | blind_consensus | red_blue
-  status        String   @default("draft")  // draft | diagnosing | ready | running | interrupted | summarizing | completed | failed | archived
+  status        String   @default("created") // created | diagnosed | running | summarized | completed | failed | aborted | interrupted | archived
+  // P1 (9.3) enum rename per Contract §7.6: draft/diagnosing→created, ready→diagnosed, summarizing→summarized;
+  // added aborted (hard-stop / convergence override). interrupted/archived retained as non-normative补充态.
   diagnosis     Json?
   roleSelection  Json?   @map("role_selection")
   // --- P1 (9.2) additive: checkpoint / resume support ---

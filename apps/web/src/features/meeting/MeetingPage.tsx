@@ -98,14 +98,14 @@ export default function MeetingPage({ reviewId }: { reviewId: string }) {
       });
   }, [reviewId]);
 
-  const isSSEEnabled = reviewStatus === 'running' || reviewStatus === 'interrupted' || reviewStatus === 'summarizing' || reviewStatus === 'completed';
+  const isSSEEnabled = reviewStatus === 'running' || reviewStatus === 'interrupted' || reviewStatus === 'summarized' || reviewStatus === 'completed';
   const { connectionStatus } = useMeetingSSE(reviewId, handleSSEEvent, isSSEEnabled);
 
   if (initialLoading) {
     return <div style={{ textAlign: 'center', marginTop: 100 }}><Spin tip="加载中..." /></div>;
   }
 
-  if (reviewStatus === 'draft' || reviewStatus === 'ready') {
+  if (reviewStatus === 'created' || reviewStatus === 'diagnosed') {
     return (
       <div style={{ padding: 48 }}>
         <Alert

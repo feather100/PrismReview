@@ -17,6 +17,12 @@ export default function MeetingHeader({ title, status, completedTurns, totalTurn
   if (status === 'completed') { tagColor = 'success'; displayStatus = '已完成'; }
   else if (status === 'interrupted') { tagColor = 'warning'; displayStatus = '已中断'; }
   else if (status === 'running') { tagColor = 'processing'; displayStatus = '评审中'; }
+  else if (status === 'created') { tagColor = 'default'; displayStatus = '已创建'; }
+  else if (status === 'diagnosed') { tagColor = 'cyan'; displayStatus = '已诊断'; }
+  else if (status === 'summarized') { tagColor = 'blue'; displayStatus = '已汇总'; }
+  else if (status === 'failed') { tagColor = 'error'; displayStatus = '失败'; }
+  else if (status === 'aborted') { tagColor = 'volcano'; displayStatus = '已中止'; }
+  else if (status === 'archived') { tagColor = 'default'; displayStatus = '已归档'; }
   else if (status === 'error' || status === 'disconnected') { tagColor = 'error'; displayStatus = '连接异常'; }
   
   const percent = totalTurns > 0 ? Math.round((completedTurns / totalTurns) * 100) : 0;

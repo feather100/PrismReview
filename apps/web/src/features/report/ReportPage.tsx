@@ -49,7 +49,7 @@ export default function ReportPage({ reviewId }: { reviewId: string }) {
     // First fetch review status to avoid ugly backend errors
     apiClient.getReview(reviewId)
       .then((review) => {
-        if (review.status === 'draft' || review.status === 'ready' || review.status === 'running') {
+        if (review.status === 'created' || review.status === 'diagnosed' || review.status === 'running') {
           setError(`该评审尚未完成（当前状态：${review.status}），暂无报告。`);
           setLoading(false);
           return;

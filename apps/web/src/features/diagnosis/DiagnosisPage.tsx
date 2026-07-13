@@ -87,16 +87,18 @@ export default function DiagnosisPage({ reviewId }: { reviewId: string }) {
   let stepsStatus: 'process' | 'error' | 'finish' | 'wait' = 'process';
   let nextActionText = '';
   
-  if (review?.status === 'draft') {
+  // 9.3: the former draft and diagnosing states are folded into 'created'
+  // (Contract §7.6). Per Codex 指令 2, distinguish them with a non-status
+  // signal: `data` (DiagnosisResponse from getDiagnosis). No diagnosis → the
+  // former draft state (开始诊断); diagnosis present → the former diagnosing
+  // state (诊断中, transient edge case). The former ready state → 'diagnosed'.
+  if (review?.status === 'created') {
     currentStep = 1;
-    nextActionText = '下一步：开始诊断';
-  } else if (review?.status === 'diagnosing') {
-    currentStep = 1;
-    nextActionText = '诊断中，请稍候';
-  } else if (review?.status === 'ready') {
+    nextActionText = data ? '诊断中，请稍候' : '下一步：开始诊断';
+  } else if (review?.status === 'diagnosed') {
     currentStep = 2;
     nextActionText = '下一步：确认评审团';
-  } else if (review?.status === 'running' || review?.status === 'interrupted' || review?.status === 'summarizing') {
+  } else if (review?.status === 'running' || review?.status === 'interrupted' || review?.status === 'summarized') {
     currentStep = 3;
     nextActionText = '下一步：等待会议完成';
   } else if (review?.status === 'completed') {
@@ -135,7 +137,7 @@ export default function DiagnosisPage({ reviewId }: { reviewId: string }) {
   ) : null;
 
   const handleConfirm = async () => {
-    if (review?.status !== 'ready') {
+    if (review?.status !== 'diagnosed') {
       message.warning('当前状态不可确认评审团，请刷新后重试。');
       return;
     }
@@ -180,7 +182,7 @@ export default function DiagnosisPage({ reviewId }: { reviewId: string }) {
           <Tooltip title="当前为只读模式，权限/动作接口尚未接入">
             <Button disabled>取消</Button>
           </Tooltip>
-          {review?.status === 'draft' && (
+          {review?.status === 'created' && !data && (
             <Button 
               type="primary" 
               loading={diagnosing}
@@ -189,7 +191,7 @@ export default function DiagnosisPage({ reviewId }: { reviewId: string }) {
               {diagnosing ? '诊断中...' : '开始诊断'}
             </Button>
           )}
-          {review?.status === 'ready' && (
+          {review?.status === 'diagnosed' && (
             <Button 
               type="primary" 
               disabled={!isConfirmEnabled} 
@@ -199,7 +201,7 @@ export default function DiagnosisPage({ reviewId }: { reviewId: string }) {
               确认评审团
             </Button>
           )}
-          {(review?.status === 'running' || review?.status === 'interrupted' || review?.status === 'summarizing') && (
+          {(review?.status === 'running' || review?.status === 'interrupted' || review?.status === 'summarized') && (
             <Button 
               type="primary" 
               onClick={() => router.push(`/reviews/${reviewId}/meeting`)}
@@ -226,7 +228,7 @@ export default function DiagnosisPage({ reviewId }: { reviewId: string }) {
       {timelineModule}
 
       {!data ? (
-        review?.status === 'draft' ? (
+        review?.status === 'created' ? (
           <div style={{ padding: '64px 48px', background: '#fff', borderRadius: 8, textAlign: 'center' }}>
             <Title level={4} style={{ marginBottom: 16, color: '#262626' }}>
               评审材料已提交，开始您的 AI 架构评审之旅

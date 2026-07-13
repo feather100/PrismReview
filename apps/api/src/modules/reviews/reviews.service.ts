@@ -6,16 +6,22 @@ import { ListReviewsQuery } from './dto/list-reviews-query.dto';
 import { ReviewResponseDto, DiagnosisResponseDto } from './dto/review-response.dto';
 import { ReportResponseDto } from './dto/report-response.dto';
 
+// P1 status flow (Contract §1.2). Enum renamed per §7.6:
+//   draft/diagnosing→created, ready→diagnosed, summarizing→summarized; aborted added.
+// interrupted/archived retained as non-normative补充态 (HITL pause / archive flag).
+// NOTE: this constant is documentation of the allowed transitions; the actual
+// guards are the `assertReview(allowedStatuses)` calls below, which were updated
+// to the same P1 spec.
 const REVIEW_STATUS_FLOW: Record<string, string[]> = {
-  draft: ['diagnosing'],
-  diagnosing: ['ready', 'failed'],
-  ready: ['running'],
-  running: ['interrupted', 'summarizing'],
-  interrupted: ['running', 'summarizing'],
-  summarizing: ['completed', 'failed'],
-  completed: [],
-  failed: [],
-  archived: [],
+  created: ['diagnosed'],                                     // diagnose() 完成诊断 + saveRoleSelection()
+  diagnosed: ['running'],                                     // startReview() 派发 round-1 turns
+  running: ['summarized', 'interrupted', 'failed'],           // 本轮 turns 终态 + Moderator 汇总 / HITL 暂停 / 执行失败
+  summarized: ['running', 'completed', 'aborted', 'failed'], // round-2 / 收敛达标 / max_rounds 硬闸 / 执行失败
+  completed: [],                                              // 终态
+  failed: [],                                                 // 终态
+  aborted: [],                                                // 终态（硬闸/收敛 override 强停）
+  interrupted: ['running'],                                    // resume() 恢复
+  archived: [],                                               // 生命周期标志（终态后归档）
 };
 
 // Mock seed role IDs (must match what seed.ts creates)
@@ -44,7 +50,7 @@ export class ReviewsService {
         objective: dto.objective,
         inputType: dto.content ? 'both' : 'text',
         mode: dto.mode ?? 'round_robin',
-        status: 'draft',
+        status: 'created',
       },
     });
     return this.toResponseDto(review);
@@ -84,12 +90,13 @@ export class ReviewsService {
   // ── Diagnose (Mock) ──
 
   async diagnose(reviewId: string, user: any): Promise<{ taskId: string }> {
-    const review = await this.assertReview(reviewId, user.tenantId, ['draft']);
+    const review = await this.assertReview(reviewId, user.tenantId, ['created']);
 
-    // Update status to diagnosing
+    // Update status to created (diagnosing folded into created per §7.6; no-op
+    // write that preserves the diagnose() two-step structure)
     await this.prisma.review.update({
       where: { id: reviewId },
-      data: { status: 'diagnosing' },
+      data: { status: 'created' },
     });
 
     // Build mock diagnosis — query real role IDs from DB
@@ -99,7 +106,7 @@ export class ReviewsService {
       where: { id: reviewId },
       data: {
         diagnosis: mockDiagnosis as any,
-        status: 'ready',
+        status: 'diagnosed',
       },
     });
 
@@ -139,7 +146,7 @@ export class ReviewsService {
   // ── Role Selection ──
 
   async saveRoleSelection(reviewId: string, user: any, dto: any) {
-    const review = await this.assertReview(reviewId, user.tenantId, ['ready']);
+    const review = await this.assertReview(reviewId, user.tenantId, ['diagnosed']);
 
     // Validate all roleIds exist
     const roleIds = dto.roles.map((r: any) => r.roleId);
@@ -164,7 +171,7 @@ export class ReviewsService {
   // ── State Machine Actions ──
 
   async startReview(reviewId: string, user: any) {
-    const review = await this.assertReview(reviewId, user.tenantId, ['ready']);
+    const review = await this.assertReview(reviewId, user.tenantId, ['diagnosed']);
     if (!review.roleSelection) {
       throw new BadRequestException('Role selection required before starting');
     }
@@ -264,7 +271,7 @@ export class ReviewsService {
     await this.assertReview(reviewId, user.tenantId, ['running', 'interrupted']);
     await this.prisma.review.update({
       where: { id: reviewId },
-      data: { status: 'summarizing' },
+      data: { status: 'summarized' },
     });
     // Mock: immediately complete
     await this.prisma.review.update({
@@ -277,7 +284,7 @@ export class ReviewsService {
   // ── Report (Mock) ──
 
   async getReport(reviewId: string, user: any): Promise<ReportResponseDto> {
-    const review = await this.assertReview(reviewId, user.tenantId, ['running', 'interrupted', 'summarizing', 'completed', 'failed']);
+    const review = await this.assertReview(reviewId, user.tenantId, ['running', 'interrupted', 'summarized', 'completed', 'failed']);
 
     // Check if real opinions exist in DB (written by agent turn runner)
     const dbOpinions = await this.prisma.reviewOpinion.findMany({

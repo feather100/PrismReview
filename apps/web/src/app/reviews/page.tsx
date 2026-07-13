@@ -103,9 +103,9 @@ export default function ReviewListPage() {
       title: '操作',
       key: 'action',
       render: (_: any, record: ReviewListItem) => {
-        const isDraft = record.status === 'draft';
-        const isReady = record.status === 'ready';
-        const isRunning = record.status === 'running' || record.status === 'interrupted' || record.status === 'summarizing';
+        const isCreated = record.status === 'created';
+        const isDiagnosed = record.status === 'diagnosed';
+        const isRunning = record.status === 'running' || record.status === 'interrupted' || record.status === 'summarized';
         const isCompleted = record.status === 'completed';
         const isFailed = record.status === 'failed';
 
@@ -113,19 +113,19 @@ export default function ReviewListPage() {
           <Space size="middle">
             {/* 诊断页入口 (依据状态变化文案) */}
             <Button
-              type={isDraft || isReady ? 'primary' : 'link'}
+              type={isCreated || isDiagnosed ? 'primary' : 'link'}
               size="small"
               onClick={() => router.push(`/reviews/${record.id}`)}
             >
-              {isDraft ? '开始诊断' : isReady ? '确认评审团' : '查看诊断'}
+              {isCreated ? '开始诊断' : isDiagnosed ? '确认评审团' : '查看诊断'}
             </Button>
 
             {/* 进入会议室 */}
             <Tooltip
               title={
-                isDraft
+                isCreated
                   ? '请先完成诊断并确认评审团'
-                  : isReady
+                  : isDiagnosed
                   ? '请先确认评审团并开始评审'
                   : ''
               }
@@ -133,9 +133,9 @@ export default function ReviewListPage() {
               <Button
                 type={isRunning ? 'primary' : 'link'}
                 size="small"
-                disabled={isDraft || isReady || isFailed}
+                disabled={isCreated || isDiagnosed || isFailed}
                 onClick={() => {
-                  if (!(isDraft || isReady || isFailed)) {
+                  if (!(isCreated || isDiagnosed || isFailed)) {
                     router.push(`/reviews/${record.id}/meeting`);
                   }
                 }}
@@ -147,9 +147,9 @@ export default function ReviewListPage() {
             {/* 查看报告 */}
             <Tooltip
               title={
-                isDraft
+                isCreated
                   ? '评审尚未开始，暂无报告'
-                  : isReady
+                  : isDiagnosed
                   ? '评审尚未完成，暂无报告'
                   : isRunning
                   ? '评审完成后可查看报告'
@@ -197,8 +197,8 @@ export default function ReviewListPage() {
         <Segmented
           options={[
             { label: '全部', value: 'all' },
-            { label: '草稿', value: 'draft' },
-            { label: '待评审', value: 'ready' },
+            { label: '已创建', value: 'created' },
+            { label: '已诊断', value: 'diagnosed' },
             { label: '评审中', value: 'running' },
             { label: '已完成', value: 'completed' },
             { label: '失败', value: 'failed' },
