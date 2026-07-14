@@ -66,6 +66,10 @@ export class ReviewOrchestrator implements OnModuleInit {
   private readonly graph: Graph<ReviewState>;
   /** HITL：跟踪在跑评审的暂停标志（P4 Sprint 5.2，§3.3）。 */
   private readonly runningReviews = new Map<string, { interrupted: boolean }>();
+  /** HITL 超时自动恢复 timers（防 LLM 卡死导致 review 永久卡在 interrupted）。 */
+  private readonly interruptTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** HITL 中断超时（默认 120s）；超过未 resume → 自动恢复并审计。 */
+  private readonly INTERRUPT_TIMEOUT_MS = Number(process.env.INTERRUPT_TIMEOUT_MS) || 120_000;
 
   constructor(
     private readonly queue: QueueService,
@@ -87,6 +91,15 @@ export class ReviewOrchestrator implements OnModuleInit {
   onModuleInit(): void {
     this.queue.completionHook = (reviewId: string) => this.handleTurnsComplete(reviewId);
     this.logger.log('ReviewOrchestrator wired to QueueService.completionHook');
+  }
+
+  /** 模块销毁：清理所有 pending HITL timeout timers（防内存泄漏）。 */
+  onModuleDestroy(): void {
+    for (const timer of this.interruptTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.interruptTimers.clear();
+    this.runningReviews.clear();
   }
 
   private get ctx(): NodeCtx {
@@ -294,6 +307,7 @@ export class ReviewOrchestrator implements OnModuleInit {
       };
       await this.checkpoint(reviewId, 'aborted', abortedState);
       await this.persistState(reviewId, abortedState);
+      this.cleanupReview(reviewId);
       this.logger.log(`Spine: review ${rid} force_stop → aborted`);
       return;
     }
@@ -312,6 +326,7 @@ export class ReviewOrchestrator implements OnModuleInit {
         };
         await this.checkpoint(reviewId, 'aborted', abortedState);
         await this.persistState(reviewId, abortedState);
+        this.cleanupReview(reviewId);
         this.logger.log(
           `Spine: review ${rid} nextRound ${nextRound} > maxRounds ${gates.maxRounds} → force_stop → aborted`,
         );
@@ -352,7 +367,27 @@ export class ReviewOrchestrator implements OnModuleInit {
     };
     await this.checkpoint(reviewId, 'completed', completedState);
     await this.persistState(reviewId, completedState);
+    this.cleanupReview(reviewId);
     this.logger.log(`Spine complete: review ${rid} → completed (decision=${decision.decisionType})`);
+  }
+
+  /**
+   * 清理 review 的运行时状态（终态时调用，防止内存泄漏）。
+   *  - 删除 runningReviews 中断标志
+   *  - 清理 queue.service.processedIds 中该 review 的 jobId 前缀
+   */
+  private cleanupReview(reviewId: string): void {
+    this.runningReviews.delete(reviewId);
+    this.clearInterruptTimer(reviewId);
+    // 清理 queue.processedIds（以 reviewId 为前缀的 job）
+    try {
+      const prefix = `${reviewId}`;
+      for (const id of this.queue.getProcessedIds()) {
+        if (id.includes(prefix)) this.queue.deleteProcessedId(id);
+      }
+    } catch (e: any) {
+      this.logger.warn(`cleanupReview processedIds sweep: ${e?.message}`);
+    }
   }
 
   /**
@@ -400,7 +435,47 @@ export class ReviewOrchestrator implements OnModuleInit {
         ruleCheckResult: { interrupted: true } as unknown as object,
       },
     });
+
+    // 4. 超时兜底：若 LLM/turn 卡死导致 review 永久 interrupted → 自动 resume + audit
+    this.scheduleInterruptTimeout(reviewId, state.round);
+
     this.logger.log(`interrupt: review ${reviewId.substring(0, 8)} → interrupted (flag set, parked)`);
+  }
+
+  /**
+   * HITL 超时兜底（P5 修复 P2）：超时未 resume → 自动恢复并审计。
+   * 防止 LLM turn 卡死 / 网络断连导致 review 永久卡在 interrupted。
+   */
+  private scheduleInterruptTimeout(reviewId: string, round: number): void {
+    this.clearInterruptTimer(reviewId);
+    const timer = setTimeout(async () => {
+      try {
+        const review = await this.prisma.review.findUnique({ where: { id: reviewId } });
+        if (!review || review.status !== 'interrupted') return; // 已被 resume 或删除
+        this.logger.warn(`HITL timeout auto-resume: review ${reviewId.substring(0, 8)} (after ${this.INTERRUPT_TIMEOUT_MS}ms)`);
+        await this.prisma.moderatorDecision.create({
+          data: {
+            reviewId,
+            round,
+            decisionType: 'tool_approval',
+            reasoning: `HITL timeout auto-resume (${this.INTERRUPT_TIMEOUT_MS}ms exceeded)`,
+            ruleCheckResult: { autoResumed: true } as unknown as object,
+          },
+        });
+        await this.resume(reviewId);
+      } catch (e: any) {
+        this.logger.error(`HITL timeout auto-resume failed: ${e?.message}`);
+      }
+    }, this.INTERRUPT_TIMEOUT_MS);
+    this.interruptTimers.set(reviewId, timer);
+  }
+
+  private clearInterruptTimer(reviewId: string): void {
+    const timer = this.interruptTimers.get(reviewId);
+    if (timer) {
+      clearTimeout(timer);
+      this.interruptTimers.delete(reviewId);
+    }
   }
 
   /**
@@ -417,10 +492,11 @@ export class ReviewOrchestrator implements OnModuleInit {
       );
     }
 
-    // 1. 清中断标志
+    // 1. 清中断标志 + 清超时 timer
     const entry = this.runningReviews.get(reviewId) ?? { interrupted: false };
     entry.interrupted = false;
     this.runningReviews.set(reviewId, entry);
+    this.clearInterruptTimer(reviewId);
 
     // 2. checkpoint running + status 翻牌
     const state = await this.buildState(reviewId);

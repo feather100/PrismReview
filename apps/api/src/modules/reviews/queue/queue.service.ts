@@ -562,6 +562,18 @@ export class QueueService implements OnModuleDestroy {
     this.logger.log(`Review ${reviewId.substring(0, 8)} → ${finalStatus} (legacy, ${completedForRound}/${expectedCount} completed, ${failedForRound} failed)`);
   }
 
+  // ── 内存管理（P5 终态清理，防 Set/Map 泄漏）──
+
+  /** 返回已处理 jobId 集合的副本（供 orchestrator.cleanupReview 扫描）。 */
+  getProcessedIds(): Set<string> {
+    return new Set(this.processedIds);
+  }
+
+  /** 删除特定的已处理 jobId（终态 review 清理）。 */
+  deleteProcessedId(id: string): void {
+    this.processedIds.delete(id);
+  }
+
   onModuleDestroy() {
     if (this.timer) clearTimeout(this.timer);
   }

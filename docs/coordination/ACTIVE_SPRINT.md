@@ -7,11 +7,11 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 5.2（P4 Tool + HITL：env 门控 LlmModerator + ToolRegistry(mock) + HITL 中断/恢复 + 人类回合覆盖）
-- **Phase**: 路线图 #11 P6（多租户/权限/审计/智能体记忆）
-- **Status**: In Progress（Sprint 5.2 代码 + 文档就绪，标准 Gate 验证全绿，待 Codex 复审入库）
+- **Current Sprint**: Sprint 5.3 完成 + 全栈审查 Sprint 6.0 完成 + P1/P2 修复已推送
+- **Phase**: P1–P5 完整收官；P6（规模化 + 生产硬化）待启动
+- **Status**: ✅ All P1–P5 Go（标准 Gate 全绿 205 个测试场景，前后端均可 demo）
 - **Last Updated**: 2026-07-14
-- **Owner**: workbuddy-coder（标准 Gate）
+- **Owner**: Codex 协调
 
 ---
 
