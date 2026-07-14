@@ -7,8 +7,8 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 2.1 + Sprint 9.6（双轨并发）
-- **Phase**: P2 Model Adapter 抽象层（coder）+ GitHub 门面文档（docs）—— 均已完成，待 Codex Gate + commit
+- **Current Sprint**: Sprint 2.2
+- **Phase**: P2 真 LLM Moderator 接线 + LM Studio Adapter 实测（Sprint 2.1 Model Adapter 抽象层已就位，本 Sprint 把LM Studio provider 走通）
 - **Status**: In Progress（代码 + 文档就绪，待入库）
 - **Last Updated**: 2026-07-14
 - **Owner**: Codex 协调（workbuddy-coder + workbuddy-docs 已交付）
@@ -120,7 +120,8 @@ Sprint 9.0 ~ 9.5b（commit `05c9bbf`）完整落地 P1 编排脊柱：状态机 
 | **9.4** | **Go**（P1 Orchestrator Spine（single-round）；graph runtime + ReviewOrchestrator + round-1 + mock Moderator + checkpoint + 幂等；commit `7a8b4e6`） |
 | **9.5a** | **Go**（P1 多轮地基；修 P2-1~P2-4：round 贯通 / minRounds 强制 / 条件边真路由 / ReviewStatus 补值；commit `12a6d3a`） |
 | **9.5b** | **Go**（P1 收官；round-2 mock debater + continue_debate + 多轮循环 + max_rounds=3 兜底演练；commit `05c9bbf`） |
-| **2.1** | **In Progress**（P2 Model Adapter 抽象层；ModelAdapter 接口 + Mock/AI 双适配器 + 多重护栏工厂；workbuddy-coder 已交付，待 commit） |
-| **9.6** | **In Progress**（GitHub 门面文档；README 重写 + CONTRIBUTING + ARCHITECTURE；workbuddy-docs 已交付，待 commit） |
+| **2.1** | **Go**（P2 Model Adapter 抽象层；ModelAdapter 接口 + Mock/AI 双适配器 + 多重护栏工厂；commit `cccb813`） |
+| **9.6** | **Go**（GitHub 门面文档；README 重写 + CONTRIBUTING + ARCHITECTURE；commit `cccb813`） |
+| **2.2** | **规划中**（P2 真 LLM Moderator 接线 + LM Studio Adapter 实测；待派） |
 | **9.5a** | **Go**（P1 Multi-Round Foundation（修 9.4 review P2-1~P2-4）；workbuddy-coder 实现 round 贯通 + minRounds 强制 + 条件边真路由 + ReviewStatus 补 interrupted/archived；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5a-multiround-foundation.js` 真实实例断言 15/15（P2-1/2/3/4 + 9.4 单轮回归）、standing smoke 31/31 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5a_MultiRound_Foundation_Backend.md` 已就位；9.5b 在其上闭合三条须知悉项，标准 Gate 复审建议 Go） |
 | **9.5b** | **In Progress**（P1 Multi-Round Debate Backend（P1 收官）；workbuddy-coder 在 9.5a 多轮地基上实现 round-2 mock debater（冲突启发式 + phase='debate'）+ 多轮 `[running→summarized]*` 循环 + `max_rounds` 每轮重校验双闸，闭合 9.5a review §8 三条须知悉项；改动 `moderator.ts`/`review-orchestrator.ts`/`queue.service.ts` 三文件，零 schema 变更、零前端改动、默认 mock、不调真实 LLM；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5b-multiround.js` 真实实例断言 **22/22**、standing `smoke-runtime.js` **31/31** 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5b_MultiRound_Debate_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |

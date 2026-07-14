@@ -1,5 +1,5 @@
 /**
- * provider-factory.ts — ModelAdapter factory (Sprint 2.1)
+ * provider-factory.ts — ModelAdapter factory (Sprint 2.1 + 2.2)
  *
  * createProviderAdapter(env?) resolves the right ModelAdapter from environment.
  *
@@ -10,9 +10,15 @@
  *   env unset / "mock"                        → MockAdapter
  *   "lmstudio"            + allow!=="true"    → MockAdapter (GUARD fallback)
  *   "openai_compatible"   + allow!=="true"    → MockAdapter (GUARD fallback)
- *   "lmstudio"            + allow==="true"    → OpenAICompatibleAdapter (LM Studio is OpenAI-compatible)
- *   "openai_compatible"   + allow==="true"    → OpenAICompatibleAdapter (GUARD at complete() if key missing)
+ *   "lmstudio"            + allow==="true"    → LmStudioAdapter  (Sprint 2.2:
+ *                                                local LM Studio, key OPTIONAL,
+ *                                                name='lmstudio' → providerSource落库)
+ *   "openai_compatible"   + allow==="true"    → OpenAICompatibleAdapter (GUARD
+ *                                                at complete() if key missing)
  *   unknown provider                            → MockAdapter
+ *
+ * Dev-only pilot cap (MODEL_PILOT_MAX_ROLES, default 3, max 3) is enforced in
+ * queue.service.applyPilotRoleCap — ONLY when lmstudio + allow==="true".
  */
 
 import {
@@ -20,6 +26,7 @@ import {
   MockAdapter,
   OpenAICompatibleAdapter,
 } from './model-adapter';
+import { LmStudioAdapter } from './lm-studio-adapter';
 
 export interface ProviderEnv {
   MODEL_PROVIDER?: string;
@@ -52,16 +59,31 @@ export function createProviderAdapter(env: ProviderEnv = process.env): ModelAdap
     return new MockAdapter();
   }
 
-  // External providers require explicit opt-in
-  if (provider === 'openai_compatible' || provider === 'lmstudio') {
+  // LM Studio (Sprint 2.2): local OpenAI-compatible server, key OPTIONAL.
+  if (provider === 'lmstudio') {
     // Multi-guard fallback: not explicitly allowed → mock
     if (allow !== 'true') {
       return new MockAdapter();
     }
     const { baseUrl, model, timeoutMs, maxTokens } = resolveConfig(env);
-    // When allowed, construct the real adapter. The adapter itself GUARDs at
-    // complete() time if MODEL_API_KEY is missing (fail-closed, never falls
-    // back to mock silently).
+    return new LmStudioAdapter({
+      baseUrl,
+      model,
+      apiKey: env.MODEL_API_KEY, // optional; LM Studio local usually none
+      timeoutMs,
+      maxTokens,
+    });
+  }
+
+  // Generic OpenAI-compatible hosted provider (requires key → GUARD fail-closed)
+  if (provider === 'openai_compatible') {
+    // Multi-guard fallback: not explicitly allowed → mock
+    if (allow !== 'true') {
+      return new MockAdapter();
+    }
+    const { baseUrl, model, timeoutMs, maxTokens } = resolveConfig(env);
+    // The adapter itself GUARDs at complete() time if MODEL_API_KEY is missing
+    // (fail-closed, never falls back to mock silently).
     return new OpenAICompatibleAdapter({
       baseUrl,
       model,
@@ -74,3 +96,6 @@ export function createProviderAdapter(env: ProviderEnv = process.env): ModelAdap
   // Unrecognized provider → mock (fail-safe)
   return new MockAdapter();
 }
+
+// Re-export the real adapters for independent testing / direct construction.
+export { LmStudioAdapter, LmStudioAdapterError } from './lm-studio-adapter';

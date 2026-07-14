@@ -4,7 +4,10 @@ const BASE = 'http://localhost:4000/api';
 
 function request(method, path, body) {
   return new Promise((resolve, reject) => {
-    const url = new URL(path, BASE);
+    // NOTE: `new URL(path, BASE)` where path is absolute ('/auth/me') REPLACES
+    // BASE's path, stripping the '/api' prefix. Concatenate instead so the
+    // request actually targets e.g. '/api/auth/me'.
+    const url = new URL(BASE + path);
     const opts = {
       method,
       hostname: url.hostname,
@@ -31,7 +34,8 @@ function request(method, path, body) {
 
 function sseRequest(path, timeoutMs = 6000) {
   return new Promise((resolve, reject) => {
-    const url = new URL(path, BASE);
+    // Preserve '/api' prefix (see request() note above).
+    const url = new URL(BASE + path);
     const req = http.get(
       { hostname: url.hostname, port: url.port, path: url.pathname },
       (res) => {
