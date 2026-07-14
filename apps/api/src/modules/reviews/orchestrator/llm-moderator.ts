@@ -37,6 +37,7 @@ const ALLOWED_DECISION_TYPES: ModeratorDecisionType[] = [
   'force_stop',
   'terminate_proposal',
   'tool_approval',
+  'propose_tool',
 ];
 
 const KNOWN_DIMENSIONS = [

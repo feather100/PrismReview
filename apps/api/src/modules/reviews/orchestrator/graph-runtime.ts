@@ -57,7 +57,8 @@ export type ModeratorDecisionType =
   | 'converge'
   | 'force_stop'
   | 'terminate_proposal'
-  | 'tool_approval'; // P4（Sprint 5.2）：Moderator 工具审批中断
+  | 'tool_approval'   // P4（Sprint 5.2）：Moderator 工具审批中断
+  | 'propose_tool';  // P5: 评审Moderator 提议使用外部工具后再决策
 
 export interface ModeratorDecisionRef {
   readonly decisionId: string;

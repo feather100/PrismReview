@@ -7,9 +7,9 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 5.3 完成 + 全栈审查 Sprint 6.0 完成 + P1/P2 修复已推送
-- **Phase**: P1–P5 完整收官；P6（规模化 + 生产硬化）待启动
-- **Status**: ✅ All P1–P5 Go（标准 Gate 全绿 205 个测试场景，前后端均可 demo）
+- **Current Sprint**: Sprint 6.0 全栈加固 + README/文档刷新完成并推送
+- **Phase**: P1–P5 完整收官（commit 5e8dbd9）；P6（规模化 + 生产硬化）待启动
+- **Status**: ✅ All P1–P5 Go + README/CONTRIBUTING/ARCHITECTURE 同步更新 + LongCat POC pass（fail-closed 生效）
 - **Last Updated**: 2026-07-14
 - **Owner**: Codex 协调
 

@@ -228,13 +228,27 @@ export class PromptServiceImpl implements PromptService {
       '数据安全与合规',
       '用户体验',
     ];
+    const voterCount = Object.keys(state.usage.turnsByReviewer).length;
     return [
-      'You are the Moderator of a multi-agent review.',
-      'Decide: converge | continue_debate | advance_round | force_stop | terminate_proposal | tool_approval.',
-      `Review ${state.reviewId} at round ${state.round} (status=${state.status}).`,
-      `Reviewers spoken: ${Object.keys(state.usage.turnsByReviewer).length}.`,
-      `Known dimensions: ${knownDimensions.join(', ')}.`,
-      'Respond ONLY with JSON: {"decisionType":"...","reasoning":"...","proposedTools":["..."]}.',
+      'You are the Moderator of a multi-agent review board.',
+      'Your job: decide whether the review should converge (output report), continue to another round of debate, or stop.',
+      '',
+      `## Current State`,
+      `- round: ${state.round}`,
+      `- reviewers spoken: ${voterCount}`,
+      `- dimensions covered: ${knownDimensions.join(', ')}`,
+      '',
+      `## Valid decisionType Values (choose exactly ONE)`,
+      `- "converge": reviewers have reached sufficient consensus → output final report`,
+      `- "continue_debate": meaningful conflict remains → schedule another round`,
+      `- "advance_round": minimum rounds not yet met → must continue`,
+      `- "force_stop": max rounds reached or critical issue requires immediate halt`,
+      `- "propose_tool": external tool/knowledge needed before deciding (specify in proposedTools)`,
+      '',
+      '## Output Format (STRICT JSON, no markdown, no explanation)',
+      '{"decisionType":"converge","reasoning":"<1-2 sentences explaining why>","proposedTools":[]}',
+      '',
+      'Return ONLY the JSON object, no other text.',
     ].join('\n');
   }
 
