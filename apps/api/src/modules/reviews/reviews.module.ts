@@ -6,9 +6,11 @@ import { QueueService } from './queue/queue.service';
 import { ReviewOrchestrator } from './orchestrator/review-orchestrator';
 import { PostgresCheckpointer } from './orchestrator/postgres-checkpointer';
 import { MockModerator } from './orchestrator/moderator';
+import { QualityService } from './quality/quality.service';
+import { QualityController } from './quality/quality.controller';
 
 @Module({
-  controllers: [ReviewsController],
+  controllers: [ReviewsController, QualityController],
   providers: [
     ReviewsService,
     ReviewsGateway,
@@ -16,7 +18,8 @@ import { MockModerator } from './orchestrator/moderator';
     ReviewOrchestrator,
     PostgresCheckpointer,
     MockModerator,
+    QualityService,
   ],
-  exports: [ReviewsService, QueueService, ReviewOrchestrator],
+  exports: [ReviewsService, QueueService, ReviewOrchestrator, QualityService],
 })
 export class ReviewsModule {}

@@ -66,3 +66,6 @@ setup-test-review.js
 
 # Sprint 9.4 / 9.5a one-off spine verification scripts (local-only, see fix_uuid*/setup-test-review convention)
 apps/api/scripts/verify-*.js
+
+# Sprint 4.0 quality benchmark CLI (local dev tool)
+apps/api/scripts/quality-benchmark.js

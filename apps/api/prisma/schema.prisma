@@ -176,6 +176,8 @@ model Review {
   // --- P1 (9.2) additive: reverse relations for new audit/checkpoint tables ---
   checkpoints       ReviewCheckpoint[]
   moderatorDecisions ModeratorDecision[]
+  // --- Sprint 4.0 additive: provider quality evaluation reports (reverse relation) ---
+  qualityReports    QualityReport[]
 
   @@index([tenantId, createdBy, status])
   @@map("reviews")
@@ -341,4 +343,39 @@ model ModeratorDecision {
 
   @@index([reviewId, round])
   @@map("moderator_decisions")
+}
+
+// ============================================================
+// Sprint 4.0 — Provider Quality Evaluation (Standard Gate)
+// ============================================================
+
+// QualityReport — aggregates provider quality metrics of a single review run
+// (or one run inside a batch benchmark). The evaluation data source is the
+// ReviewOpinion rows produced by the (already-run) ModelAdapter.
+model QualityReport {
+  id String @id @default(uuid()) @db.Uuid
+  reviewId String @map("review_id") @db.Uuid
+  providerSource String @map("provider_source") // mock | lmstudio | openai_compatible | fallback_mock | failed
+  runMode String @map("run_mode") // single | batch
+
+  // --- Core metrics ---
+  avgConfidence Float @map("avg_confidence") // AVG(confidenceScore)
+  minConfidence Int @map("min_confidence")
+  maxConfidence Int @map("max_confidence")
+  opinionCount Int @map("opinion_count")
+  dimensionsCovered String[] @map("dimensions_covered") // distinct dimensions actually present in opinions
+  riskDistribution Json @map("risk_distribution") // { high:N, medium:N, low:N, info:N }
+  consistencyScore Float? @map("consistency_score") // cross-run consistency (batch mode)
+  missingDimensions String[] @map("missing_dimensions") // expected dimensions not covered
+
+  // --- Meta ---
+  durationMs Int @map("duration_ms")
+  modelName String? @map("model_name")
+  errorMessage String? @map("error_message")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id])
+
+  @@index([providerSource, runMode])
+  @@map("quality_reports")
 }
