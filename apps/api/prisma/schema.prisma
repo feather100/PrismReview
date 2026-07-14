@@ -176,6 +176,8 @@ model Review {
   // --- P1 (9.2) additive: reverse relations for new audit/checkpoint tables ---
   checkpoints       ReviewCheckpoint[]
   moderatorDecisions ModeratorDecision[]
+  // --- Sprint 5.2 P4 additive: Tool call requests (reverse relation) ---
+  toolCallRequests ToolCallRequest[]
   // --- Sprint 4.0 additive: provider quality evaluation reports (reverse relation) ---
   qualityReports    QualityReport[]
 
@@ -224,12 +226,56 @@ model ReviewOpinion {
   round            Int?   @map("round")                           // P1: redundant column for report aggregation (source of truth = ReviewTurn.round)
   // --- Sprint 5.1 P3 (Prompt + Memory): prompt 版本溯源（ComposedPrompt.templateRefs 序列化）---
   promptRefs       Json?  @map("prompt_refs")
+  // --- P4 (Sprint 5.2) Tool + HITL：意见来源（'llm' | 'human' | 'mock'）---
+  source           String?  @map("source") @default("llm")
 
   review Review     @relation(fields: [reviewId], references: [id])
   turn   ReviewTurn @relation(fields: [turnId], references: [id])
 
   @@index([reviewId])
   @@map("review_opinions")
+}
+
+// ============================================================
+// Sprint 5.2 P4 — Tool + HITL (Standard Gate)
+// 严格限于 Contract §5 声明范围：2 新表 + 既表加列（ModeratorDecision / ReviewOpinion.source）
+// 不触碰 Review / ReviewTurn / ReviewCheckpoint / QualityReport / ReviewerMemory /
+// ProjectMemory / PromptTemplateRecord / AgentRole* / User / AuditLog / Tenant / Department。
+// ============================================================
+
+// ToolCallRequest — 经 Moderator 审批后的工具调用记录（P4 Tool 层，mock 默认不调真实 MCP）。
+model ToolCallRequest {
+  id            String   @id @default(uuid()) @db.Uuid
+  reviewId      String   @map("review_id") @db.Uuid
+  round         Int
+  requestedBy   String   @map("requested_by") // 'moderator'
+  toolName      String   @map("tool_name")
+  input         Json     @default("{}")
+  approvedBy    String?  @map("approved_by")   // ModeratorDecision.id
+  status        String   @default("pending")   // pending|executing|completed|failed|denied
+  result        Json?
+  deniedReason  String?  @map("denied_reason")
+  createdAt     DateTime @default(now()) @map("created_at")
+  completedAt   DateTime? @map("completed_at")
+
+  review Review @relation(fields: [reviewId], references: [id])
+
+  @@index([reviewId, round])
+  @@map("tool_call_requests")
+}
+
+// ToolDefinitionRecord — 工具定义注册表（MCP server 标识，默认 mock 不调真实 server）。
+model ToolDefinitionRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @unique
+  type         String                         // knowledge_search|code_analysis|web_search|calculation|custom
+  description  String
+  inputSchema  Json     @map("input_schema")
+  mcpServerRef String   @map("mcp_server_ref")
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("tool_definitions")
 }
 
 // ============================================================
@@ -336,9 +382,14 @@ model ModeratorDecision {
   id              String   @id @default(uuid()) @db.Uuid
   reviewId        String   @map("review_id") @db.Uuid
   round           Int      @map("round")
-  decisionType    String   @map("decision_type") // advance_round | continue_debate | converge | force_stop | terminate_proposal
+  decisionType    String   @map("decision_type") // advance_round | continue_debate | converge | force_stop | terminate_proposal | tool_approval
   reasoning       String
   ruleCheckResult Json     @map("rule_check_result") // RuleCheckResult serialized
+  // ── P4 (Sprint 5.2) 审计增强（Contract §5 / §4.4）──
+  proposedTools          String[] @default([]) @map("proposed_tools")          // Moderator 本轮提议的工具名列表
+  toolApprovalReasoning String?  @map("tool_approval_reasoning")              // 审批工具的理由
+  llmRawOutput           String?  @map("llm_raw_output")                       // LLM 原始输出（脱敏，仅 providerSource=llm 时填写）
+  sanityCheckResult      Json?    @map("sanity_check_result")                  // 反对 sanity check 结果
   createdAt       DateTime @default(now()) @map("created_at")
 
   review Review @relation(fields: [reviewId], references: [id])

@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QueueService } from './queue/queue.service';
 import { ReviewOrchestrator } from './orchestrator';
+import { ToolRegistryImpl } from '../tool/tool.registry';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ListReviewsQuery } from './dto/list-reviews-query.dto';
 import { ReviewResponseDto, DiagnosisResponseDto } from './dto/review-response.dto';
@@ -41,6 +43,7 @@ export class ReviewsService {
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
     private readonly orchestrator: ReviewOrchestrator,
+    private readonly toolRegistry: ToolRegistryImpl,
   ) {}
 
   async createReview(dto: CreateReviewDto, user: any): Promise<ReviewResponseDto> {
@@ -339,20 +342,95 @@ export class ReviewsService {
 
   async interrupt(reviewId: string, user: any) {
     await this.assertReview(reviewId, user.tenantId, ['running']);
-    await this.prisma.review.update({
-      where: { id: reviewId },
-      data: { status: 'interrupted' },
-    });
+    // 真正暂停：交 orchestrator 置标志 + park（DB 翻牌由 orchestrator.interrupt 完成）
+    await this.orchestrator.interrupt(reviewId);
     return { status: 'interrupted' };
   }
 
   async resume(reviewId: string, user: any) {
     await this.assertReview(reviewId, user.tenantId, ['interrupted']);
-    await this.prisma.review.update({
-      where: { id: reviewId },
-      data: { status: 'running' },
-    });
+    // 真正恢复：交 orchestrator 续跑（清标志 + 翻牌 + 重派发）
+    await this.orchestrator.resume(reviewId);
     return { status: 'running' };
+  }
+
+  /**
+   * P4 Human Turn Override（Sprint 5.2 §3.4）：人类评审员手动注入意见（source='human'）。
+   *
+   *  - assert 评审处于 running / interrupted。
+   *  - 同 round 已提交过（幂等键 .r{round}::human）→ 幂等 skip（T15）。
+   *  - 创建 ReviewTurn(phase='human', status='completed') + 每条 ReviewOpinion(source='human')。
+   *  - interrupted 态 → 自动 orchestrator.resume（T14）；否则触发 meeting 完成检查（T13）。
+   */
+  async submitHumanTurn(
+    reviewId: string,
+    user: any,
+    dto: { round: number; opinions: Array<{
+      dimension: string; riskLevel: string; issue: string;
+      recommendation: string; confidenceScore: number; citations?: unknown;
+    }> },
+  ): Promise<{ status: string; reviewId: string; turnId: string; opinionCount: number }> {
+    const review = await this.assertReview(reviewId, user.tenantId, ['running', 'interrupted']);
+    const round = dto.round;
+
+    // 幂等：同 round 的 human turn 已存在 → skip（T15）
+    const idemKey = `${reviewId}::human::${round}`;
+    const existing = await this.prisma.reviewTurn.findFirst({ where: { reviewId, idempotencyKey: idemKey } });
+    if (existing) {
+      const opin = await this.prisma.reviewOpinion.findMany({ where: { turnId: existing.id } });
+      return { status: review.status, reviewId, turnId: existing.id, opinionCount: opin.length };
+    }
+
+    const turnIndex = (await this.prisma.reviewTurn.count({ where: { reviewId } })) + 1;
+    const turn = await this.prisma.reviewTurn.create({
+      data: {
+        reviewId,
+        turnIndex,
+        phase: 'human',
+        // 人类走独立通道，非 reviewer 角色版本。roleVersionId 仅为 Uuid 列（无 FK 约束，Contract §5.3 不触碰 ReviewTurn），
+        // 用合法 UUID 占位，避免 Prisma Uuid 校验报错；语义身份由 idempotencyKey(::human::) 区分。
+        roleVersionId: randomUUID(),
+        status: 'completed',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        round,
+        idempotencyKey: idemKey,
+      },
+    });
+    for (const op of dto.opinions) {
+      await this.prisma.reviewOpinion.create({
+        data: {
+          reviewId,
+          turnId: turn.id,
+          dimension: op.dimension,
+          riskLevel: op.riskLevel,
+          issue: op.issue,
+          recommendation: op.recommendation,
+          citations: (op.citations as unknown) ?? [],
+          confidenceScore: op.confidenceScore,
+          reasoningSummary: 'human override',
+          modelOutputRef: JSON.stringify({ providerSource: 'human' }),
+          source: 'human',
+        },
+      });
+    }
+
+    if (review.status === 'interrupted') {
+      // T14：interrupted 态自动 resume（orchestrator.resume 会清标志 + 续跑 + 触发 summarize）
+      await this.orchestrator.resume(reviewId);
+      return { status: 'running', reviewId, turnId: turn.id, opinionCount: dto.opinions.length };
+    }
+
+    // T13：触发 meeting 完成检查（若本轮 turns 齐 → 触发 summarize 流）
+    await this.queueService.checkMeetingComplete(reviewId);
+    return { status: 'human_turn_recorded', reviewId, turnId: turn.id, opinionCount: dto.opinions.length };
+  }
+
+  /** P4（Sprint 5.2 T21）：返回某评审的工具调用审批日志（ToolCallRequest）。 */
+  async getToolRequests(reviewId: string, user: any) {
+    await this.assertReview(reviewId, user.tenantId, ['running', 'interrupted', 'summarized', 'completed']);
+    const log = await this.toolRegistry.getApprovalLog(reviewId);
+    return { reviewId, toolRequests: log };
   }
 
   async summarize(reviewId: string, user: any) {
@@ -439,6 +517,8 @@ export class ReviewsService {
       source: 'mock_fallback',
       opinionCount: opinions.length,
       generatedFromTurns: false,
+      // P4 (Sprint 5.2 T19)：叙事来源取最近一次 converge 的 ModeratorDecision.reasoning
+      narrative: await this.loadNarrative(review.id),
       providerSummary: { totalTurns: 0, bySource: { mock: opinions.length }, fallbackCount: 0, failedCount: 0, models: ['mock'], hasRealProvider: false },
       verdict,
       executiveSummary: `方案 "${review.title}" 经过 ${roles.length} 个角色的评审，共识别 ${risks.length} 项风险。${lowConfidenceItems.length > 0 ? `其中 ${lowConfidenceItems.length} 条意见置信度较低，需人工确认。` : ''}`,
@@ -496,6 +576,8 @@ export class ReviewsService {
       source: 'db_opinions',
       opinionCount: opinions.length,
       generatedFromTurns: true,
+      // P4 (Sprint 5.2 T19)：叙事来源取最近一次 converge 的 ModeratorDecision.reasoning
+      narrative: await this.loadNarrative(review.id),
       providerSummary: this.buildProviderSummary(dbOpinions),
       verdict,
       executiveSummary: `方案 "${review.title}" 经过 ${opinions.length} 个角色的评审，共识别 ${risks.length} 项风险。${lowConfidenceItems.length > 0 ? `其中 ${lowConfidenceItems.length} 条意见置信度较低，需人工确认。` : ''}`,
@@ -616,6 +698,18 @@ export class ReviewsService {
   }
 
   // ── Helpers ──
+
+  /**
+   * P4 (Sprint 5.2 T19)：叙事来源 —— 取最近一次 converge 的 ModeratorDecision.reasoning。
+   * 无 converge 决策（如 force_stop/aborted）时返回 null（报告降级为 mock 叙事）。
+   */
+  private async loadNarrative(reviewId: string): Promise<string | undefined> {
+    const dec = await this.prisma.moderatorDecision.findFirst({
+      where: { reviewId, decisionType: 'converge' },
+      orderBy: { round: 'desc' },
+    });
+    return dec?.reasoning ?? undefined;
+  }
 
   private async assertReview(reviewId: string, tenantId: string, allowedStatuses: string[]) {
     const review = await this.prisma.review.findFirst({

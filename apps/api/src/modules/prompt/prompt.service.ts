@@ -15,6 +15,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SYSTEM_PROMPT } from '../reviews/provider/model-adapter';
 import type { MemoryService } from '../memory/memory.service';
+import type { ReviewState } from '../reviews/orchestrator/graph-runtime';
 
 export type PromptLayer = 'base' | 'task' | 'context' | 'format';
 
@@ -212,6 +213,29 @@ export class PromptServiceImpl implements PromptService {
         schemaVersion: srcMeta.schemaVersion ?? '1.0',
       },
     });
+  }
+
+  /**
+   * 为 LlmModerator 组装 system prompt（P4 §4.3）。
+   * 确定性 mock 内容（不调真实 LLM），描述评审状态 + 可用工具 + 收敛信号，
+   * 作为真 LLM 模式下的 system prompt 骨架。env-gated，默认不启用。
+   */
+  async composeForModerator(state: ReviewState): Promise<string> {
+    const knownDimensions = [
+      '架构合理性',
+      '投入产出分析',
+      '交付风险',
+      '数据安全与合规',
+      '用户体验',
+    ];
+    return [
+      'You are the Moderator of a multi-agent review.',
+      'Decide: converge | continue_debate | advance_round | force_stop | terminate_proposal | tool_approval.',
+      `Review ${state.reviewId} at round ${state.round} (status=${state.status}).`,
+      `Reviewers spoken: ${Object.keys(state.usage.turnsByReviewer).length}.`,
+      `Known dimensions: ${knownDimensions.join(', ')}.`,
+      'Respond ONLY with JSON: {"decisionType":"...","reasoning":"...","proposedTools":["..."]}.',
+    ].join('\n');
   }
 
   private bumpVersion(v: string): string {

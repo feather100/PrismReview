@@ -25,6 +25,13 @@ export interface ModeratorDecision {
   readonly reasoning: string;
   readonly ruleCheckResult: RuleCheckResult;
   readonly createdAt: string;
+  // ── P4 (Sprint 5.2) 审计增强（Contract §4.4，可选、向后兼容）──
+  readonly proposedTools?: string[]; // Moderator 本轮提议的工具名列表
+  readonly toolApprovalReasoning?: string; // 审批工具的理由
+  readonly llmRawOutput?: string; // LLM 原始输出（脱敏，仅 providerSource=llm 时填写）
+  readonly sanityCheckResult?: { oppositionAllowed: boolean; sanityReason: string };
+  // 审计来源标记（'mock' | 'llm' | 'fallback_mock' | 'guard_error'）；仅内存，不落独立列
+  readonly providerSource?: string;
 }
 
 export interface HardGates {
@@ -47,6 +54,41 @@ export interface Moderator {
   decide(state: Readonly<ReviewState>, gates: HardGates): Promise<ModeratorDecision>;
 }
 
+/** DI token：env-gated 构造的 Moderator 实现（MockModerator / LlmModerator）。 */
+export const MODERATOR_TOKEN = 'MODERATOR_SERVICE';
+
+/**
+ * 硬闸计算（代码强制，LLM 不可覆盖）。抽出为共享函数，供 MockModerator 与
+ * LlmModerator 复用，确保两条路径的硬闸语义一致（Contract §4.3 硬闸 / §5 红线 #8）。
+ */
+export function computeRuleCheck(state: Readonly<ReviewState>, gates: HardGates): RuleCheckResult {
+  const round = state.round;
+  const usage = state.usage;
+
+  const maxRoundsOk = round <= gates.maxRounds;
+  const maxTurnsPerReviewerOk = Object.values(usage.turnsByReviewer).every(
+    (c) => c <= gates.maxTurnsPerReviewer,
+  );
+  const maxTokensOk = usage.totalTokens <= gates.maxTokensPerReview;
+  const maxCostOk = usage.totalCost <= gates.maxCostPerReview;
+
+  // 收敛启发式（P1 mock 确定性）：各 reviewer 已发言 → 收敛达标
+  const reviewersSpoke = Object.keys(usage.turnsByReviewer).length > 0;
+  const convergenceOk = reviewersSpoke;
+
+  const passed =
+    maxRoundsOk && maxTurnsPerReviewerOk && maxTokensOk && maxCostOk && convergenceOk;
+
+  return {
+    maxRoundsOk,
+    maxTurnsPerReviewerOk,
+    maxTokensOk,
+    maxCostOk,
+    convergenceOk,
+    passed,
+  };
+}
+
 @Injectable()
 export class MockModerator implements Moderator {
   private readonly logger = new Logger(MockModerator.name);
@@ -57,25 +99,22 @@ export class MockModerator implements Moderator {
     const round = state.round;
     const usage = state.usage;
 
-    // ── 硬闸（代码强制，LLM 不可覆盖）──
-    const maxRoundsOk = round <= gates.maxRounds;
-    const maxTurnsPerReviewerOk = Object.values(usage.turnsByReviewer).every(
-      (c) => c <= gates.maxTurnsPerReviewer,
-    );
-    const maxTokensOk = usage.totalTokens <= gates.maxTokensPerReview;
-    const maxCostOk = usage.totalCost <= gates.maxCostPerReview;
-
-    // 收敛启发式（P1 mock 确定性）：各 reviewer 已发言 → 收敛达标
-    const reviewersSpoke = Object.keys(usage.turnsByReviewer).length > 0;
-    const convergenceOk = reviewersSpoke;
+    // ── 硬闸（代码强制，LLM 不可覆盖，复用共享 computeRuleCheck）──
+    const ruleCheckResult = computeRuleCheck(state, gates);
+    const {
+      maxRoundsOk,
+      maxTurnsPerReviewerOk,
+      maxTokensOk,
+      maxCostOk,
+      convergenceOk,
+      passed,
+    } = ruleCheckResult;
 
     // 9.5b round-2 mock debater（Contract §10）：本轮 high-risk 冲突检测。
     // P1 mock 确定性启发式：本轮 ≥2 条 high-risk opinion → 视为存在未决 high-risk 冲突，
     // 需要进入 round-2 debate 深挖（"存在 riskLevel=high 的冲突意见 → continue_debate"）。
     const conflictCount = await this.detectConflict(state.reviewId, round);
     const conflict = conflictCount >= 2;
-
-    const passed = maxRoundsOk && maxTurnsPerReviewerOk && maxTokensOk && maxCostOk && convergenceOk;
 
     // 多轮脊柱：默认 converge → completed；冲突则 continue_debate → round-2；到顶则 force_stop。
     let decisionType: ModeratorDecisionType = 'converge';
@@ -106,15 +145,6 @@ export class MockModerator implements Moderator {
       reasoning = `round-${round}: ${conflictCount} high-risk opinions → conflict detected → continue_debate (round-${round + 1} dispatch)`;
     }
 
-    const ruleCheckResult: RuleCheckResult = {
-      maxRoundsOk,
-      maxTurnsPerReviewerOk,
-      maxTokensOk,
-      maxCostOk,
-      convergenceOk,
-      passed,
-    };
-
     // 审计落库（§5.4）
     const record = await this.prisma.moderatorDecision.create({
       data: {
@@ -123,6 +153,8 @@ export class MockModerator implements Moderator {
         decisionType,
         reasoning,
         ruleCheckResult: ruleCheckResult as unknown as object,
+        // P4 审计增强：默认 mock 路径下 proposedTools 空，其余列留 null（向后兼容）
+        proposedTools: [],
       },
     });
 

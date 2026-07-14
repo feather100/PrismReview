@@ -7,9 +7,9 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 5.1（P3 Prompt + Memory：四层版本化 Prompt 模板 + 四层蒸馏 Memory + mock Knowledge）
+- **Current Sprint**: Sprint 5.2（P4 Tool + HITL：env 门控 LlmModerator + ToolRegistry(mock) + HITL 中断/恢复 + 人类回合覆盖）
 - **Phase**: 路线图 #11 P6（多租户/权限/审计/智能体记忆）
-- **Status**: In Progress（代码 + 文档就绪，标准 Gate 验证全绿，待 Codex 复审入库）
+- **Status**: In Progress（Sprint 5.2 代码 + 文档就绪，标准 Gate 验证全绿，待 Codex 复审入库）
 - **Last Updated**: 2026-07-14
 - **Owner**: workbuddy-coder（标准 Gate）
 
@@ -48,6 +48,23 @@ Sprint 9.0 ~ 9.5b（commit `05c9bbf`）完整落地 P1 编排脊柱：状态机 
 - **⑥ 验证全绿**：`tsc(api+web)` 0 errors；`prisma migrate status` up to date（1 新 migration：`20260714103558_add_p3_memory_prompt`）；`smoke-runtime.js` 31/31；`verify-sprint-5.1-prompt-memory.js` **20/20**（T1–T18）；`verify-9.5b-multiround.js` 22/22；`verify-review-history.js` 16/16；`verify-quality.js` 32/32；`verify-sprint-5-rbac-audit.js` 22/22；密钥扫描干净（git grep exit=1，无敏感文件入库）。
 - **⑦ 红线守住**：schema delta 仅 Contract §6 声明（3 新表 + `ReviewOpinion.promptRefs`）；未改 `apps/web`；未写密钥、未引入 bcrypt/jwt 新依赖；未执行 `git commit`/`git push`；未 `--force`；memory 不存聊天历史。
 - 产出 `docs/coordination/Sprint_5.1_P3_Prompt_Memory_Contract.md`（权威契约）+ `Sprint_5.1_P3_Prompt_Memory_Implementation.md`（实现规格）+ 本文件滚动到 5.1。**未执行 git commit / push**（标准 Gate 红线，待 Codex 标准 Guard 复审）。
+
+---
+
+## Sprint 5.2 — P4 Tool + HITL（workbuddy-coder 实现，标准 Gate；基线 `0f56520`，2026-07-14）
+
+**目标**：在 P1 编排脊柱 + P3 Prompt/Memory 之上，引入 (1) env 门控的 LlmModerator（替代写死的 MockModerator，LLM 失败降级 Mock）；(2) ToolRegistry + ToolDefinitionRecord（mock 工具执行，绝无真实 MCP SDK）；(3) HITL 真正中断/恢复编排器（非仅 DB 状态翻转）；(4) 人类回合覆盖 API（source='human'，A2A 禁止 reviewer 调工具，人类走独立通道）；(5) 报告叙事字段（narrative）。
+
+- **① env 门控 Moderator 工厂**：`reviews.module.ts` 经 `MODERATOR_TOKEN` + `useFactory: createModeratorWithEnv(prisma, promptService)` 注入；`MODERATOR_PROVIDER=llm && ALLOW_EXTERNAL_MODEL_CALLS=true` → `LlmModerator`，否则（含 `llm` 无 allow）fail-closed → `MockModerator`；`ReviewOrchestrator` 第 4 构造参从 `MockModerator` 改为 `Moderator` 接口（DI 令牌注入）。
+- **② LlmModerator**：实现共享 `Moderator` 接口 `decide(state, gates)` / `narrate` / `proposeTools` / `sanityCheck` / `fallbackDecision`；`sanityCheck` 走 `computeRuleCheck` 硬闸（maxRounds/maxTurnsPerReviewer/minRounds/maxTokens/maxCost，代码强制，LLM 不可越界）；失败/解析异常 → `fallbackDecision`（无真实 LLM 依赖）；`ModeratorDecision` 新列 `proposedTools`/`toolApprovalReasoning`/`llmRawOutput`/`sanityCheckResult` 落库。
+- **③ ToolRegistry（mock，无真实 MCP）**：`modules/tool/tool.registry.ts` + `tool.module.ts`，`registerTool`/`listAvailableTools`/`executeTool`/`getApprovalLog`；`executeTool` 返回 mock 桩（`knowledge_search` → `{chunks:[]}`），`ToolCallRequest` 落库 `status='completed'`；schema 新增 `ToolCallRequest` + `ToolDefinitionRecord` 两表。
+- **④ HITL 真正中断/恢复**：`ReviewOrchestrator.interrupt(reviewId)` 置 `runningReviews` 标志 + 运行中即 park（checkpoint 'interrupted' + status 翻转 + 审计 `ModeratorDecision('tool_approval','HITL manual interrupt')`）；`resume(reviewId)` 校验当前 `interrupted` 状态、清标志、checkpoint 'running' + 重派发 `review.start`；`nodeRunning`/`handleTurnsComplete` 加中断守卫（interrupted → 不派发、parked）；graph `tool_node`/`interrupted` 桩节点 + 条件边（interrupted→running/summarized）。
+- **⑤ 人类回合覆盖 API**：`POST :reviewId/meetings`（`@RequirePermissions('review.write')` → `submitHumanTurn`）；断言 running/interrupted，按 `(reviewId,'human',round)` 幂等键建 `ReviewTurn(phase='human', roleVersionId=valid UUID)` + `ReviewOpinion(source='human')`；interrupted → `orchestrator.resume`，否则 `queueService.checkMeetingComplete`（已置 public）；`GET :reviewId/tool-requests`（`review.read` → `toolRegistry.getApprovalLog`）；`report-response.dto` 加 `narrative`（来自最新 `converge` `ModeratorDecision.reasoning`）。
+- **⑥ 审计增强**：`audit.interceptor.ts` 新增 `POST .../meetings` → `review.human_turn`。
+- **⑦ 数据迁移（1 新）**：`20260714114906_add_p4_tool_hitl`（schema delta 严格限 Contract §5：仅 `ModeratorDecision` 加列 + `ReviewOpinion.source` + 两新表 + `Review.toolCallRequests` 反向关系）。
+- **⑧ 验证全绿**：`tsc(api+web)` 0 errors；`prisma migrate status` up to date（1 新 migration：`20260714114906_add_p4_tool_hitl`）；`smoke-runtime.js` 31/31；`verify-sprint-5.2-tool-hitl.js` **27/27**（T1–T22）；`verify-9.5b-multiround.js` 22/22；`verify-review-history.js` 16/16；`verify-quality.js` 32/32；`verify-sprint-5-rbac-audit.js` 22/22；`verify-sprint-5.1-prompt-memory.js` 20/20；密钥扫描干净（仅 `MODERATOR_TOKEN='MODERATOR_SERVICE'` DI 令牌，无真实密钥；baseline .env/seed 测试密钥未触碰）。
+- **⑨ 红线守住**：未改 `apps/web`（前端零改动，`next build` standalone 仅 Windows symlink EPERM，与代码无关；`tsc web=0`）；未引入真实 MCP SDK / bcrypt；A2A 禁止（reviewer 不调工具，人类走独立通道）；`MODERATOR_PROVIDER` 门控且 LLM 失败降级 MockModerator；未执行 `git commit`/`git push`；未 `--force`；schema delta 仅 Contract §5 范围。
+- 产出 `docs/coordination/Sprint_5.2_P4_Tool_HITL_Contract.md`（权威契约）+ `Sprint_5.2_P4_Tool_HITL_Implementation.md`（实现规格）+ 本文件滚动到 5.2。**未执行 git commit / push**（标准 Gate 红线，待 Codex 标准 Guard 复审）。
 
 ---
 

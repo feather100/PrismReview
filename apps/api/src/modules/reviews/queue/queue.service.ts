@@ -480,7 +480,8 @@ export class QueueService implements OnModuleDestroy {
 
   // ── meeting.complete coordination ──
 
-  private async checkMeetingComplete(reviewId: string): Promise<void> {
+  /** 公开：供 Human Turn Override（P4 §3.4 T13）在插入人类意见后触发本轮完成判定。 */
+  async checkMeetingComplete(reviewId: string): Promise<void> {
     const review = await this.prisma.review.findUnique({ where: { id: reviewId } });
     if (!review) return;
     if (review.status !== 'running') return; // Already completed

@@ -13,6 +13,7 @@ import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PromptModule } from './modules/prompt/prompt.module';
 import { MemoryModule } from './modules/memory/memory.module';
+import { ToolModule } from './modules/tool/tool.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { MemoryModule } from './modules/memory/memory.module';
     UsersModule,
     PromptModule,
     MemoryModule,
+    ToolModule,
   ],
   providers: [
     {

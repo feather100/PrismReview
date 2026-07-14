@@ -10,6 +10,7 @@ import { SaveRoleSelectionDto } from './dto/save-role-selection.dto';
 import { ListReviewsQuery } from './dto/list-reviews-query.dto';
 import { ReviewResponseDto } from './dto/review-response.dto';
 import { ReportResponseDto } from './dto/report-response.dto';
+import { HumanTurnDto } from './dto/human-turn.dto';
 
 @Controller('reviews')
 // 鉴权由全局 JwtAuthGuard 提供；除 POST /reviews 外，其余路由 RBAC 标注留待 ACTIVE_SPRINT P2 backlog
@@ -109,6 +110,30 @@ export class ReviewsController {
     @Param('reviewId', new ParseUUIDPipe({ version: '4' })) reviewId: string,
   ): Promise<any> {
     return this.reviewsService.resume(reviewId, user);
+  }
+
+  /**
+   * P4 Human Turn Override（Sprint 5.2 §3.4）：人类评审员手动注入意见（source='human'）。
+   * 需 review.write 权限（T22：无权限 → 403）。
+   */
+  @Post(':reviewId/meetings')
+  @RequirePermissions('review.write')
+  async submitHumanTurn(
+    @CurrentUser() user: AuthUser,
+    @Param('reviewId', new ParseUUIDPipe({ version: '4' })) reviewId: string,
+    @Body() dto: HumanTurnDto,
+  ): Promise<any> {
+    return this.reviewsService.submitHumanTurn(reviewId, user, dto);
+  }
+
+  /** P4（Sprint 5.2 T21）：返回某评审的工具调用审批日志（ToolCallRequest）。需 review.read 权限。 */
+  @Get(':reviewId/tool-requests')
+  @RequirePermissions('review.read')
+  async getToolRequests(
+    @CurrentUser() user: AuthUser,
+    @Param('reviewId', new ParseUUIDPipe({ version: '4' })) reviewId: string,
+  ): Promise<any> {
+    return this.reviewsService.getToolRequests(reviewId, user);
   }
 
   @Sse(':reviewId/meeting/stream')

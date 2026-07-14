@@ -12,7 +12,7 @@
  *  - mock Moderator 在 round-1 summarized 后只做 converge → completed（无 round-2 辩论，9.5 范围）。
  *  - 单轮不会触顶 max_rounds（=3），但硬闸检查代码存在（每转移前校验）。
  */
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import { createProviderAdapter } from '../provider/provider-factory';
@@ -25,7 +25,7 @@ import {
   isTerminalStatus,
 } from './graph-runtime';
 import { PostgresCheckpointer } from './postgres-checkpointer';
-import { MockModerator, HardGates, DEFAULT_HARD_GATES, toDecisionRef } from './moderator';
+import { MODERATOR_TOKEN, Moderator, HardGates, DEFAULT_HARD_GATES, toDecisionRef } from './moderator';
 import { resolveHardGates } from './hard-gates';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { MemoryServiceImpl } from '../../memory/memory.service';
@@ -41,7 +41,7 @@ import { KnowledgeService } from '../../knowledge/knowledge.service';
  *     · continue_debate：存在 high-risk 冲突 → 派发 round-2 debate turns
  *     两者在 9.5b 均触发 currentRound++ + round-N 派发（多轮循环）。
  */
-type NextNode = 'completed' | 'aborted' | 'running';
+type NextNode = 'completed' | 'aborted' | 'running' | 'tool_node';
 function routeAfterSummarized(type: ModeratorDecisionType): NextNode {
   switch (type) {
     case 'converge':
@@ -52,6 +52,8 @@ function routeAfterSummarized(type: ModeratorDecisionType): NextNode {
     case 'advance_round':
     case 'continue_debate':
       return 'running';
+    case 'tool_approval':
+      return 'tool_node'; // P4 Tool 节点（stub，默认 MockModerator 不触发）
     default:
       return 'running';
   }
@@ -61,12 +63,14 @@ function routeAfterSummarized(type: ModeratorDecisionType): NextNode {
 export class ReviewOrchestrator implements OnModuleInit {
   private readonly logger = new Logger(ReviewOrchestrator.name);
   private readonly graph: Graph<ReviewState>;
+  /** HITL：跟踪在跑评审的暂停标志（P4 Sprint 5.2，§3.3）。 */
+  private readonly runningReviews = new Map<string, { interrupted: boolean }>();
 
   constructor(
     private readonly queue: QueueService,
     private readonly prisma: PrismaService,
     private readonly checkpointer: PostgresCheckpointer,
-    private readonly moderator: MockModerator,
+    @Inject(MODERATOR_TOKEN) private readonly moderator: Moderator,
     // P3 注入位（NodeCtx 等价）：真实服务由模块装配注入；手动 `new ReviewOrchestrator(...)` 时为 undefined → 跳过 memory 聚合。
     private readonly promptService?: PromptServiceImpl,
     private readonly memoryService?: MemoryServiceImpl,
@@ -107,6 +111,15 @@ export class ReviewOrchestrator implements OnModuleInit {
       completed: async () => ({ status: 'completed', currentNodeId: 'completed' }),
       failed: async () => ({ status: 'failed', currentNodeId: 'failed' }),
       aborted: async () => ({ status: 'aborted', currentNodeId: 'aborted' }),
+      // P4 (Sprint 5.2) Tool 节点 stub：消费 pendingToolCalls（ToolCallRequest ids），调用 ToolRegistry.executeTool。
+      // 默认 MockModerator 不触发 tool_approval，故该节点在生产默认配置下不会被路由进入。
+      tool_node: async (state) => ({
+        status: 'summarized',
+        currentNodeId: 'tool_node',
+        pendingToolCalls: state.pendingToolCalls,
+      }),
+      // P4 (Sprint 5.2) HITL 暂停节点 stub：写 checkpoint + 空转等待 resume。
+      interrupted: async () => ({ status: 'interrupted', currentNodeId: 'interrupted' }),
     };
     return {
       nodes,
@@ -123,6 +136,11 @@ export class ReviewOrchestrator implements OnModuleInit {
           route: (s) => routeAfterSummarized(s.lastDecisionType ?? 'converge'),
         },
         { kind: 'static', from: 'running', to: 'failed' },
+        // P4 (Sprint 5.2) Tool 节点边（stub）：tool_approval 后进入 tool_node，完成后回到 summarized。
+        { kind: 'static', from: 'tool_node', to: 'summarized' },
+        // P4 (Sprint 5.2) HITL 中断边（stub）：interrupted 后可 resume→running 或 human_override→summarized。
+        { kind: 'conditional', from: 'interrupted', route: (s) => 'running' },
+        { kind: 'conditional', from: 'interrupted', route: (s) => 'summarized' },
       ],
       start: 'created',
     };
@@ -138,6 +156,7 @@ export class ReviewOrchestrator implements OnModuleInit {
       );
       return;
     }
+    this.runningReviews.set(reviewId, { interrupted: false });
     const state = await this.buildState(reviewId);
     const patch = await this.graph.nodes['running'](state, this.ctx);
     const next = { ...state, ...patch } as ReviewState;
@@ -164,6 +183,12 @@ export class ReviewOrchestrator implements OnModuleInit {
       return { status: 'aborted', currentNodeId: 'aborted' };
     }
 
+    // HITL：若已被 interrupt，则暂停本轮派发（不新派发 turn，交由 orchestrator.interrupt park）
+    if (this.runningReviews.get(state.reviewId)?.interrupted) {
+      this.logger.log(`nodeRunning: review ${state.reviewId.substring(0, 8)} interrupted → park, skip dispatch`);
+      return { status: 'interrupted', currentNodeId: 'interrupted', round: state.round };
+    }
+
     // 派发 round-1 并行 reviewer turns（包装 QueueService；review.start 内部按角色派发）
     // P2-1：显式携带 round（= state.round = review.currentRound），贯通到 turn 写入，
     // 避免 9.5 round-2 时全部错发 round=1 + 幂等键冲突。
@@ -188,6 +213,21 @@ export class ReviewOrchestrator implements OnModuleInit {
       this.logger.log(
         `handleTurnsComplete: review ${reviewId.substring(0, 8)} already ${review.status}, skip`,
       );
+      return;
+    }
+
+    // HITL：interrupt 标志置位 → 不收敛，直接 park 到 interrupted（真正暂停，不触发 Moderator 决策）
+    if (this.runningReviews.get(reviewId)?.interrupted) {
+      const st = await this.buildState(reviewId);
+      const interruptedState: ReviewState = {
+        ...st,
+        status: 'interrupted',
+        currentNodeId: 'interrupted',
+        updatedAt: new Date().toISOString(),
+      };
+      await this.checkpoint(reviewId, 'interrupted', interruptedState);
+      await this.persistState(reviewId, interruptedState);
+      this.logger.log(`handleTurnsComplete: review ${reviewId.substring(0, 8)} interrupted flag → parked (no converge)`);
       return;
     }
 
@@ -299,21 +339,86 @@ export class ReviewOrchestrator implements OnModuleInit {
    *  - running：重派发 pending turns（幂等）+ 重查完成（幂等）
    *  - summarized：直接走 handleTurnsComplete（补完成）
    */
-  async resume(reviewId: string): Promise<void> {
-    const cp = await this.checkpointer.load(reviewId);
+  /**
+   * HITL 暂停（P4 §3.3）：真正闭合的中断。
+   *  - 置 runningReviews 标志，阻止下一轮 turn 派发（nodeRunning 阻断）。
+   *  - 若当前 running，则 park 到 interrupted（checkpoint + status 翻牌 + 审计 ModeratorDecision('tool_approval')）。
+   */
+  async interrupt(reviewId: string): Promise<void> {
     const review = await this.prisma.review.findUnique({ where: { id: reviewId } });
     if (!review) return;
-    const nodeId = cp?.nodeId ?? review.currentNodeId ?? 'running';
-    this.logger.log(`Resume: review ${reviewId.substring(0, 8)} from node ${nodeId}`);
 
-    if (nodeId === 'running') {
-      await this.start(reviewId); // 幂等：重派发 review.start；已终态 turn 跳过
-      await this.handleTurnsComplete(reviewId); // 幂等：若已 completed 则 skip
-    } else if (nodeId === 'summarized') {
-      await this.handleTurnsComplete(reviewId);
-    } else {
-      this.logger.log(`Resume: nothing to do at node ${nodeId}`);
+    // 1. 置标志，阻止后续 turn 派发
+    const entry = this.runningReviews.get(reviewId) ?? { interrupted: false };
+    entry.interrupted = true;
+    this.runningReviews.set(reviewId, entry);
+
+    // 2. 仅运行态才 park；否则仅置标志（等下次 handleTurnsComplete 阻断）
+    if (review.status !== 'running') {
+      this.logger.log(`interrupt: review ${reviewId.substring(0, 8)} not running (${review.status}); flag set only`);
+      return;
     }
+
+    const state = await this.buildState(reviewId);
+    const interruptedState: ReviewState = {
+      ...state,
+      status: 'interrupted',
+      currentNodeId: 'interrupted',
+      updatedAt: new Date().toISOString(),
+    };
+    await this.checkpoint(reviewId, 'interrupted', interruptedState);
+    await this.persistState(reviewId, interruptedState);
+
+    // 3. 审计：ModeratorDecision('tool_approval', 'HITL manual interrupt')
+    await this.prisma.moderatorDecision.create({
+      data: {
+        reviewId,
+        round: state.round,
+        decisionType: 'tool_approval',
+        reasoning: 'HITL manual interrupt',
+        ruleCheckResult: { interrupted: true } as unknown as object,
+      },
+    });
+    this.logger.log(`interrupt: review ${reviewId.substring(0, 8)} → interrupted (flag set, parked)`);
+  }
+
+  /**
+   * HITL 恢复（P4 §3.3）：从 interrupted 续跑。
+   *  - 非 interrupted 态 → 400（BadRequestException）。
+   *  - 清标志 + checkpoint running + status 翻牌 + 重派发当前轮 turns（幂等）。
+   */
+  async resume(reviewId: string): Promise<void> {
+    const review = await this.prisma.review.findUnique({ where: { id: reviewId } });
+    if (!review) return;
+    if (review.status !== 'interrupted') {
+      throw new BadRequestException(
+        `review ${reviewId.substring(0, 8)} is not in 'interrupted' state; cannot resume (current: ${review.status})`,
+      );
+    }
+
+    // 1. 清中断标志
+    const entry = this.runningReviews.get(reviewId) ?? { interrupted: false };
+    entry.interrupted = false;
+    this.runningReviews.set(reviewId, entry);
+
+    // 2. checkpoint running + status 翻牌
+    const state = await this.buildState(reviewId);
+    const runningState: ReviewState = {
+      ...state,
+      status: 'running',
+      currentNodeId: 'running',
+      updatedAt: new Date().toISOString(),
+    };
+    await this.checkpoint(reviewId, 'running', runningState);
+    await this.persistState(reviewId, runningState);
+
+    // 3. 从中断点续跑：重派发当前轮 turns（幂等；已完成 skip）
+    this.queue.enqueue('review.start', {
+      reviewId: state.reviewId,
+      sessionId: `session-${state.reviewId}-resume`,
+      round: state.round,
+    });
+    this.logger.log(`resume: review ${reviewId.substring(0, 8)} → running (r${state.round} redispatched)`);
   }
 
   // ── State 构建 / 持久化 ──

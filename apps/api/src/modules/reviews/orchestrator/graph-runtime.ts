@@ -56,7 +56,8 @@ export type ModeratorDecisionType =
   | 'continue_debate'
   | 'converge'
   | 'force_stop'
-  | 'terminate_proposal';
+  | 'terminate_proposal'
+  | 'tool_approval'; // P4（Sprint 5.2）：Moderator 工具审批中断
 
 export interface ModeratorDecisionRef {
   readonly decisionId: string;
@@ -82,6 +83,8 @@ export interface ReviewState {
   usage: UsageLedger;
   // 收敛信号（P1 mock 用确定性启发式；P3 起接 rolling summary）
   convergenceScore?: number;
+  // P4 (Sprint 5.2) Tool 调用挂起队列（ToolCallRequest ids）；tool_node 消费
+  pendingToolCalls?: string[];
   // 最近一次 Moderator 决策类型（供 summarized 条件边读取，P2-3）；9.5a 新增。
   lastDecisionType?: ModeratorDecisionType;
   updatedAt: string; // ISO

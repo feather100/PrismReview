@@ -42,6 +42,7 @@ export class ReportResponseDto {
   @Expose() source: string;     // 'db_opinions' | 'mock_fallback'
   @Expose() opinionCount: number;
   @Expose() generatedFromTurns: boolean;
+  @Expose() narrative?: string; // P4 (Sprint 5.2 T19)：来自 converge ModeratorDecision.reasoning 的叙事
 
   @Expose() providerSummary?: {
     totalTurns: number;

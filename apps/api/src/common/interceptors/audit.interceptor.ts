@@ -74,6 +74,10 @@ export class AuditInterceptor implements NestInterceptor {
     if (first === 'reviews' && method === 'POST' && segments.length === 1) {
       return 'review.created';
     }
+    // P4 (Sprint 5.2 T20)：POST /reviews/:id/meetings → review.human_turn
+    if (first === 'reviews' && method === 'POST' && segments.includes('meetings')) {
+      return 'review.human_turn';
+    }
     // PATCH /reviews/:id/archive → review.archived
     if (first === 'reviews' && method === 'PATCH' && segments.includes('archive')) {
       return 'review.archived';
