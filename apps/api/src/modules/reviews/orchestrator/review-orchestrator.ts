@@ -54,7 +54,8 @@ function routeAfterSummarized(type: ModeratorDecisionType): NextNode {
     case 'continue_debate':
       return 'running';
     case 'tool_approval':
-      return 'tool_node'; // P4 Tool 节点（stub，默认 MockModerator 不触发）
+    case 'propose_tool':
+      return 'tool_node'; // P4/P5 Tool 节点（stub）
     default:
       return 'running';
   }
