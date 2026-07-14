@@ -11,6 +11,8 @@ import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { PromptModule } from './modules/prompt/prompt.module';
+import { MemoryModule } from './modules/memory/memory.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { PrismaModule } from './prisma/prisma.module';
     KnowledgeModule,
     AuditModule,
     UsersModule,
+    PromptModule,
+    MemoryModule,
   ],
   providers: [
     {

@@ -11,6 +11,9 @@ import { Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import { ModelAdapter } from '../provider/model-adapter';
+import type { PromptService } from '../../prompt/prompt.service';
+import type { MemoryService } from '../../memory/memory.service';
+import type { KnowledgeService } from '../../knowledge/knowledge.service';
 
 // ── Review status（Contract §2.2 / §1.1 规范集）──
 // 9.5a P2-4：补齐 9.3 物理枚举的保留值 `interrupted` / `archived`（§1.1 补充保留态）。
@@ -126,18 +129,9 @@ export interface Graph<S extends ReviewState> {
   readonly start: string; // 入口节点 id（如 'created'）
 }
 
-// ── P2/P3 注入位（Contract §2.4）──
-// ModelAdapter is the real abstraction introduced in Sprint 2.1
-// (provider/model-adapter.ts). P1 nodes do not consume it yet; it is
-// injected into NodeCtx at module assembly for P2 readiness.
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-export interface MemoryService {
-  /* P3 */
-}
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-export interface PromptService {
-  /* P3 */
-}
+// ── P2/P3 注入位（Contract §2.4 / §5.2）──
+// ModelAdapter 是 Sprint 2.1 真实抽象；P3 的 PromptService / MemoryService /
+// KnowledgeService 为"叶子"（普通 TS 函数），由 graph runtime 的 NodeCtx 注入。
 
 export interface NodeCtx {
   readonly logger: Logger; // P1 必有
@@ -147,6 +141,7 @@ export interface NodeCtx {
   readonly modelAdapter?: ModelAdapter; // P2
   readonly memoryService?: MemoryService; // P3
   readonly promptService?: PromptService; // P3
+  readonly knowledgeService?: KnowledgeService; // P3
   // 既有服务复用（包装，不替换）
   readonly queue: QueueService; // 既有内存队列（queue.service.ts）
   readonly prisma: PrismaService; // 既有 ORM

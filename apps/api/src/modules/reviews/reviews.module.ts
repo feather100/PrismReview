@@ -8,8 +8,12 @@ import { PostgresCheckpointer } from './orchestrator/postgres-checkpointer';
 import { MockModerator } from './orchestrator/moderator';
 import { QualityService } from './quality/quality.service';
 import { QualityController } from './quality/quality.controller';
+import { PromptModule } from '../prompt/prompt.module';
+import { MemoryModule } from '../memory/memory.module';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
 
 @Module({
+  imports: [PromptModule, MemoryModule, KnowledgeModule],
   controllers: [ReviewsController, QualityController],
   providers: [
     ReviewsService,

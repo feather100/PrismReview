@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { SearchTestDto } from './dto/search-test.dto';
+import { KnowledgeChunk } from '@prisma/client';
 
 @Injectable()
 export class KnowledgeService {
@@ -185,6 +186,27 @@ export class KnowledgeService {
     });
 
     return { status: 'ready' };
+  }
+
+  // ── Sprint 5.1 P3：KB/RAG 接入点（mock 占位，Contract §4）──
+
+  /**
+   * P3 mock：不接真实 embedding 检索，返回空数组。
+   * 真实 RAG 在 P4 经 MCP tool 接入（仍须显式 env + Gate）。
+   */
+  async searchRelevantChunks(reviewId: string, query: string, limit = 5): Promise<KnowledgeChunk[]> {
+    void reviewId;
+    void query;
+    void limit;
+    return [];
+  }
+
+  /**
+   * P3 mock：返回空摘要（KB 未配置）。
+   */
+  async getKnowledgeContext(reviewId: string): Promise<string> {
+    void reviewId;
+    return 'KB 未配置';
   }
 
   // ── Helpers ──

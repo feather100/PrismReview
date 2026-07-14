@@ -27,6 +27,9 @@ import {
 import { PostgresCheckpointer } from './postgres-checkpointer';
 import { MockModerator, HardGates, DEFAULT_HARD_GATES, toDecisionRef } from './moderator';
 import { resolveHardGates } from './hard-gates';
+import { PromptServiceImpl } from '../../prompt/prompt.service';
+import { MemoryServiceImpl } from '../../memory/memory.service';
+import { KnowledgeService } from '../../knowledge/knowledge.service';
 
 /**
  * P2-3（9.5a）+ 9.5b 须知悉项 1 & 3：summarized 节点的下一节点由
@@ -64,6 +67,10 @@ export class ReviewOrchestrator implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly checkpointer: PostgresCheckpointer,
     private readonly moderator: MockModerator,
+    // P3 注入位（NodeCtx 等价）：真实服务由模块装配注入；手动 `new ReviewOrchestrator(...)` 时为 undefined → 跳过 memory 聚合。
+    private readonly promptService?: PromptServiceImpl,
+    private readonly memoryService?: MemoryServiceImpl,
+    private readonly knowledgeService?: KnowledgeService,
   ) {
     this.graph = this.buildGraph();
   }
@@ -83,7 +90,10 @@ export class ReviewOrchestrator implements OnModuleInit {
       prisma: this.prisma,
       // Sprint 2.1: modelAdapter injected at module assembly (P2 节点就绪位)
       modelAdapter: createProviderAdapter(),
-      // memoryService / promptService: P3 注入位（P1 传 undefined）
+      // P3 注入位：替代 undefined，由模块装配注入（Contract §5.2）
+      promptService: this.promptService,
+      memoryService: this.memoryService,
+      knowledgeService: this.knowledgeService,
     };
   }
 
@@ -197,6 +207,20 @@ export class ReviewOrchestrator implements OnModuleInit {
     };
     await this.checkpoint(reviewId, 'summarized', summarizedState);
     await this.persistState(reviewId, summarizedState);
+
+    // P3：summarized 节点聚合 Memory（蒸馏 profile + project memory）；
+    // 多轮 round≥3 触发滚动压缩。失败不阻塞主流程（catch 兜底，T17）。
+    if (this.memoryService) {
+      try {
+        await this.memoryService.updateReviewerProfile(reviewId);
+        await this.memoryService.updateProjectMemory(reviewId);
+        if (state.round >= 3) {
+          await this.memoryService.compressRoundContext(reviewId, state.round);
+        }
+      } catch (e: any) {
+        this.logger.warn(`Memory aggregation failed (non-blocking): ${e?.message}`);
+      }
+    }
 
     // P2-3：条件路由 —— summarized 的下一节点由 decide() 结果决定（非硬编码 completed）
     const next = routeAfterSummarized(decision.decisionType);

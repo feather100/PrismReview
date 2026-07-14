@@ -7,8 +7,8 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 5.0（Platform RBAC Enforcement + User Management + Audit Logging）
-- **Phase**: 路线图 #11 P6（多租户/权限/审计）
+- **Current Sprint**: Sprint 5.1（P3 Prompt + Memory：四层版本化 Prompt 模板 + 四层蒸馏 Memory + mock Knowledge）
+- **Phase**: 路线图 #11 P6（多租户/权限/审计/智能体记忆）
 - **Status**: In Progress（代码 + 文档就绪，标准 Gate 验证全绿，待 Codex 复审入库）
 - **Last Updated**: 2026-07-14
 - **Owner**: workbuddy-coder（标准 Gate）
@@ -33,6 +33,21 @@ Sprint 9.0 ~ 9.5b（commit `05c9bbf`）完整落地 P1 编排脊柱：状态机 
 - **⑥ 验证全绿**：`tsc(api+web)` 0 errors；`prisma migrate status` up to date（零 migration）；`smoke-runtime.js` 31/31；`verify-sprint-5-rbac-audit.js` **22/22**（T1–T20）；`verify-9.5b-multiround.js` 22/22；`verify-review-history.js` 16/16；`verify-quality.js` 32/32；密钥扫描干净（git grep exit=1，无敏感文件入库）。
 - **⑦ 红线守住**：未改 schema（零迁移）；未改 `apps/web`（前端零改动）；未写密钥；`passwordHash` 仅 `mock_password_hash`、未引入 bcrypt；未执行 `git commit`/`git push`；未 `--force`。
 - 产出 `docs/coordination/Sprint_5.0_Platform_RBAC_Audit_Backend.md`（权威任务文档，本次新增/滚动）+ 本文件滚动到 5.0。**未执行 git commit / push**（标准 Gate 红线，待 Codex 标准 Guard 复审）。
+
+---
+
+## Sprint 5.1 — P3 Prompt + Memory（workbuddy-coder 实现，标准 Gate；基线 `332b5b0`，2026-07-14）
+
+**目标**：在 P1 编排脊柱之上，补 Prompt 版本化（四层 base/task/context/format）+ 四层蒸馏 Memory（Reviewer / Project）+ mock Knowledge 检索，使每次评审可溯源 prompt 版本、跨评审累积 reviewer 蒸馏 profile 与 project 决策记忆；蒸馏与压缩均为确定性规则（绝不调用真实 LLM、绝不存聊天历史）。
+
+- **① Prompt 版本化**：新建 `modules/prompt/`（Contract §2）。`PromptServiceImpl.compose()` 四层组装 system（base→task→context→format），user 保留 `You are reviewing as {roleCode}.` 前缀（下游 mock 适配器据此提取角色，保证 9.5b 等回归不破）；`templateRefs` 随 `ReviewOpinion.promptRefs` 落库。支持 `registerTemplate`（版本自增，旧版不可变）/ `getActiveTemplate` / `getTemplateHistory` / `rollbackTo`（复制历史内容为新版本）。
+- **② Memory 四层蒸馏**：新建 `modules/memory/`。`updateReviewerProfile` 按 roleCode 聚合维度置信度 + 确定性偏见检测（high-risk 占比 >50%），`ReviewerMemory` 仅存蒸馏 profile（维度擅长 / 偏见摘要），**绝不存 opinion.issue 等聊天历史原文**；`updateProjectMemory` 从 `report.actionItems` 提取 decisions；`compressRoundContext` 多轮（round≥3）截断前序发言为滚动摘要（mock 截断，不调 LLM）。
+- **③ Knowledge mock**：改造 `modules/knowledge/` 加 `searchRelevantChunks()`（返回空数组）/ `getKnowledgeContext()`（返回 `KB 未配置`）。
+- **④ 编排注入**：`graph-runtime.ts` NodeCtx 注入 `promptService/memoryService/knowledgeService`；`queue.service.ts` 的 `executeAgentTurn` 调 `compose()` 替代硬编码 prompt，结果写入 `promptRefs`；`review-orchestrator.ts` 的 `handleTurnsComplete`（summarized 节点）调 `updateReviewerProfile` / `updateProjectMemory` / `compressRoundContext`（round≥3），整体 `try/catch` 兜底（memory 写失败不阻塞 review 主流程）；`app.module.ts` / `reviews.module.ts` 注册 `PromptModule` + `MemoryModule`。
+- **⑤ 数据迁移（首次）**：`seedPresetPromptTemplates()` 把 `AgentRoleVersion.systemPrompt` 同步为 `PromptTemplateRecord` base/task/format v1.0（幂等，覆盖所有 preset/custom 角色）。
+- **⑥ 验证全绿**：`tsc(api+web)` 0 errors；`prisma migrate status` up to date（1 新 migration：`20260714103558_add_p3_memory_prompt`）；`smoke-runtime.js` 31/31；`verify-sprint-5.1-prompt-memory.js` **20/20**（T1–T18）；`verify-9.5b-multiround.js` 22/22；`verify-review-history.js` 16/16；`verify-quality.js` 32/32；`verify-sprint-5-rbac-audit.js` 22/22；密钥扫描干净（git grep exit=1，无敏感文件入库）。
+- **⑦ 红线守住**：schema delta 仅 Contract §6 声明（3 新表 + `ReviewOpinion.promptRefs`）；未改 `apps/web`；未写密钥、未引入 bcrypt/jwt 新依赖；未执行 `git commit`/`git push`；未 `--force`；memory 不存聊天历史。
+- 产出 `docs/coordination/Sprint_5.1_P3_Prompt_Memory_Contract.md`（权威契约）+ `Sprint_5.1_P3_Prompt_Memory_Implementation.md`（实现规格）+ 本文件滚动到 5.1。**未执行 git commit / push**（标准 Gate 红线，待 Codex 标准 Guard 复审）。
 
 ---
 

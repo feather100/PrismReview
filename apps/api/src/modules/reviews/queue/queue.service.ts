@@ -5,6 +5,8 @@ import { shouldDispatchTurn, resolveHardGates } from '../orchestrator/hard-gates
 import { validateOpinion, StructuredOpinion, RiskLevel } from '../orchestrator/opinion';
 import { ModelAdapter, MockAdapter, SYSTEM_PROMPT, parseModelOpinion } from '../provider/model-adapter';
 import { createProviderAdapter } from '../provider/provider-factory';
+import { PromptServiceImpl } from '../../prompt/prompt.service';
+import { MemoryServiceImpl, type MemoryService } from '../../memory/memory.service';
 
 interface QueueJob {
   id: string;
@@ -42,7 +44,12 @@ export class QueueService implements OnModuleDestroy {
   private readonly MAX_RETRIES = 3;
   private readonly POLL_INTERVAL = 100; // ms
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // P3 注入位（NodeCtx 等价）：真实服务由模块装配注入；手动 `new QueueService(prisma)` 时为 undefined → 降级 SYSTEM_PROMPT。
+    private readonly promptService?: PromptServiceImpl,
+    private readonly memoryService?: MemoryServiceImpl,
+  ) {}
 
   /**
    * Enqueue a job. If a job with the same idempotency ID already exists, skip.
@@ -284,6 +291,27 @@ export class QueueService implements OnModuleDestroy {
     // The adapter resolves from env (default = MockAdapter); queue.service no
     // longer reads provider env vars directly.
     const adapter: ModelAdapter = this.modelAdapter;
+
+    // P3：PromptService 四层组装（mock 确定性，不调真实 LLM）。失败则降级 SYSTEM_PROMPT。
+    let system: string = SYSTEM_PROMPT;
+    let promptRefs: any = null;
+    if (this.promptService) {
+      try {
+        const composed = await this.promptService.compose({
+          reviewId,
+          roleCode,
+          round,
+          phase: turnPhase,
+          memoryService: this.memoryService,
+        });
+        system = composed.system;
+        promptRefs = composed.templateRefs;
+      } catch (e: any) {
+        this.logger.warn(`PromptService.compose degraded to SYSTEM_PROMPT: ${e?.message}`);
+      }
+    }
+
+    // user prompt：保留 "You are reviewing as {roleCode}." 前缀（mock 适配器据此提取角色，保证 9.5b 等回归不破）
     const prompt = `You are reviewing as ${roleCode}.\n\nProposal:\n${objective}`;
 
     let result: any;
@@ -291,7 +319,7 @@ export class QueueService implements OnModuleDestroy {
     const startTime = Date.now();
 
     try {
-      const out = await adapter.complete({ prompt, system: SYSTEM_PROMPT, temperature: 0.1 });
+      const out = await adapter.complete({ prompt, system, temperature: 0.1 });
       const durationMs = Date.now() - startTime;
       const parsed = parseModelOpinion(out.text);
       if (!parsed || !parsed.riskLevel) {
@@ -325,7 +353,7 @@ export class QueueService implements OnModuleDestroy {
       // Runtime error — fallback to mock with warn (only when a real provider was used)
       if (adapter.name !== 'mock') {
         this.logger.warn(`[Fallback] ${adapter.name} → mock, reason: ${msg}`);
-        const fallbackOut = await new MockAdapter().complete({ prompt, system: SYSTEM_PROMPT });
+        const fallbackOut = await new MockAdapter().complete({ prompt, system });
         const parsed = parseModelOpinion(fallbackOut.text);
         result = parsed || {};
         observability = {
@@ -392,6 +420,8 @@ export class QueueService implements OnModuleDestroy {
         confidenceScore: result.confidenceScore,
         reasoningSummary: this.buildReasoningSummary(observability),
         modelOutputRef: JSON.stringify(observability),
+        // P3：prompt 版本溯源（ComposedPrompt.templateRefs 序列化）；未注入 promptService 时为 null
+        promptRefs: (promptRefs ?? undefined) as any,
       },
     });
 
