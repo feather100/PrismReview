@@ -72,7 +72,7 @@ PrismReview 采用 **标准 Gate（Standard Gate）** 与 **快速 Gate（Fast-G
 仓库内置多组 smoke 脚本（`scripts/`），用于验证不同维度：
 
 ```bash
-# 全链路自愈：create → diagnose → start → report（默认 mock）
+# 全链路自愈（默认 mock）：create → diagnose → start → report
 node scripts/smoke-runtime.js
 
 # 队列 / runner / SSE / 导出 等专项
@@ -80,6 +80,16 @@ node scripts/smoke-queue.js
 node scripts/smoke-runner.js
 node scripts/smoke-sse.js
 node scripts/smoke-export.js
+
+# P1–P5 专项验证（gitignored，独立可重跑）
+cd apps/api && node scripts/verify-9.5b-multiround.js        # P1 多轮回合
+node scripts/verify-sprint-5-rbac-audit.js   # P4 RBAC+审计
+node scripts/verify-sprint-5.1-prompt-memory.js # P3 Prompt+Memory
+node scripts/verify-sprint-5.2-tool-hitl.js  # P4 Tool+HITL
+node scripts/verify-sprint-5.3-workflow-scoring.js # P5 评分
+node scripts/verify-review-history.js        # 历史管理
+node scripts/verify-quality.js               # 质量评测
+cd ../..
 
 # 一键 demo（见 README Demo 路线）
 node scripts/setup-demo-review.js                 # Route A 纯 mock
@@ -92,7 +102,7 @@ node scripts/setup-demo-review.js --with-runner   # Route B runner + DB
 cd apps/web && npx tsc --noEmit --incremental false && cd ../..
 ```
 
-提交前请确保 `pnpm dev` 起得来、至少 `smoke-runtime.js` 通过。
+提交前请确保 `tsc apps/api` 0 errors、`tsc apps/web` 0 errors、至少 `smoke-runtime.js` 31/31 通过。
 
 ---
 
