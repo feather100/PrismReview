@@ -1,10 +1,10 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Sse, Res, UseGuards, UseInterceptors, ClassSerializerInterceptor, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, Sse, Res, UseInterceptors, ClassSerializerInterceptor, ParseUUIDPipe } from '@nestjs/common';
 import { Response } from 'express';
 import { Observable } from 'rxjs';
 import { ReviewsService } from './reviews.service';
 import { ReviewsGateway } from './reviews.gateway';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { SaveRoleSelectionDto } from './dto/save-role-selection.dto';
 import { ListReviewsQuery } from './dto/list-reviews-query.dto';
@@ -12,7 +12,8 @@ import { ReviewResponseDto } from './dto/review-response.dto';
 import { ReportResponseDto } from './dto/report-response.dto';
 
 @Controller('reviews')
-@UseGuards(JwtAuthGuard)
+// 鉴权由全局 JwtAuthGuard 提供；除 POST /reviews 外，其余路由 RBAC 标注留待 ACTIVE_SPRINT P2 backlog
+// TODO: RBAC pending (ACTIVE_SPRINT P2 backlog)
 @UseInterceptors(ClassSerializerInterceptor)
 export class ReviewsController {
   constructor(
@@ -21,6 +22,7 @@ export class ReviewsController {
   ) {}
 
   @Post()
+  @RequirePermissions('review.create')
   async createReview(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateReviewDto,

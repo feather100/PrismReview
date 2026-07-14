@@ -7,11 +7,11 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 2.3（规划中）
-- **Phase**: P2 能力深化待确定（ModelAdapter 结构 + LM Studio 已验证，LongCat 留作按需接入）
-- **Status**: In Progress（代码 + 文档就绪，待入库）
+- **Current Sprint**: Sprint 5.0（Platform RBAC Enforcement + User Management + Audit Logging）
+- **Phase**: 路线图 #11 P6（多租户/权限/审计）
+- **Status**: In Progress（代码 + 文档就绪，标准 Gate 验证全绿，待 Codex 复审入库）
 - **Last Updated**: 2026-07-14
-- **Owner**: Codex 协调（workbuddy-coder + workbuddy-docs 已交付）
+- **Owner**: workbuddy-coder（标准 Gate）
 
 ---
 
@@ -22,6 +22,19 @@ Sprint 9.0 ~ 9.5b（commit `05c9bbf`）完整落地 P1 编排脊柱：状态机 
 ---
 
 ## 当前目标
+
+**Sprint 5.0 — Platform RBAC Enforcement + User Management + Audit Logging**（workbuddy-coder 实现，标准 Gate；基线 `c247b1b`，2026-07-14）：
+
+- **① RBAC 基础设施落地**：新建 `@RequirePermissions(...)` 装饰器（`common/decorators/permissions.decorator.ts`）+ `PermissionsGuard`（`common/guards/permissions.guard.ts`，OR 语义、Reflector 驱动）；在 `app.module.ts` 以 `APP_GUARD` 注册 `JwtAuthGuard`（认证）→ `PermissionsGuard`（鉴权）两级全局守卫。
+- **② JwtAuthGuard 补 permissions**：改造为 `@Injectable()`，注入 `AuthService.getPermissions()` 填充 `user.permissions`（mock 用户默认 `enterprise_admin` 全量权限；真实用户从 `platformRole` 映射），闭合 `current-user.decorator.ts` 早有的 `permissions` 字段但从未填充的缺口。
+- **③ Audit 基础设施**：新建 `AuditService` + `AuditInterceptor`（全局，仅 POST/PATCH/DELETE 留痕、非阻塞 `.catch`、跳过 `/audit` 自身防死循环）；`action` 由路由相对路径推导（`review.created`/`user.updated`/`user.role_changed` 等），`detail` 按 §2.3 规则填充；新增 `GET /api/audit` 带租户隔离（`super_admin` 例外）+ `audit.read` 权限保护。
+- **④ Users 管理 API**：新建 `modules/users/`（CRUD + DTO×4），RBAC 矩阵 `list/get=role.read`、`create/patch=role.write`、`delete=role.delete`；`passwordHash='mock_password_hash'`（红线 #3，不引入 bcrypt）；软删 `status='disabled'`；创建时同租户邮箱去重（`EMAIL_ALREADY_EXISTS`）+ 部门存在性校验（`DEPARTMENT_NOT_FOUND`）。
+- **⑤ RBAC 示范标注**：`reviews.controller.ts` POST /reviews 加 `@RequirePermissions('review.create')`；`roles.controller.ts` 全量按 §2.5 权限矩阵标注（`role.read`/`role.write`/`role.delete`）；`auth/knowledge/quality` 控制器的本地 `@UseGuards(JwtAuthGuard)` 移除（全局 APP_GUARD 接管，避免未导入 AuthModule 的 DI 失败）。
+- **⑥ 验证全绿**：`tsc(api+web)` 0 errors；`prisma migrate status` up to date（零 migration）；`smoke-runtime.js` 31/31；`verify-sprint-5-rbac-audit.js` **22/22**（T1–T20）；`verify-9.5b-multiround.js` 22/22；`verify-review-history.js` 16/16；`verify-quality.js` 32/32；密钥扫描干净（git grep exit=1，无敏感文件入库）。
+- **⑦ 红线守住**：未改 schema（零迁移）；未改 `apps/web`（前端零改动）；未写密钥；`passwordHash` 仅 `mock_password_hash`、未引入 bcrypt；未执行 `git commit`/`git push`；未 `--force`。
+- 产出 `docs/coordination/Sprint_5.0_Platform_RBAC_Audit_Backend.md`（权威任务文档，本次新增/滚动）+ 本文件滚动到 5.0。**未执行 git commit / push**（标准 Gate 红线，待 Codex 标准 Guard 复审）。
+
+---
 
 在 9.4（P1 编排脊柱 single-round，commit `7a8b4e6`）+ 9.5a（P1 多轮地基，修 P2-1~P2-4，未提交）+ 9.1 Contract + 9.2（schema）+ 9.3（枚举）基础上，实做 **P1 收官：多轮回合（round-2 + 多轮循环 + max_rounds 兜底）**（workbuddy-coder 实现，标准 Gate），闭合 9.5a review §8 三条须知悉项：
 
@@ -124,4 +137,5 @@ Sprint 9.0 ~ 9.5b（commit `05c9bbf`）完整落地 P1 编排脊柱：状态机 
 | **9.6** | **Go**（GitHub 门面文档；README 重写 + CONTRIBUTING + ARCHITECTURE；commit `cccb813`） |
 | **2.2** | **规划中**（P2 真 LLM Moderator 接线 + LM Studio Adapter 实测；待派） |
 | **9.5a** | **Go**（P1 Multi-Round Foundation（修 9.4 review P2-1~P2-4）；workbuddy-coder 实现 round 贯通 + minRounds 强制 + 条件边真路由 + ReviewStatus 补 interrupted/archived；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5a-multiround-foundation.js` 真实实例断言 15/15（P2-1/2/3/4 + 9.4 单轮回归）、standing smoke 31/31 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5a_MultiRound_Foundation_Backend.md` 已就位；9.5b 在其上闭合三条须知悉项，标准 Gate 复审建议 Go） |
-| **9.5b** | **In Progress**（P1 Multi-Round Debate Backend（P1 收官）；workbuddy-coder 在 9.5a 多轮地基上实现 round-2 mock debater（冲突启发式 + phase='debate'）+ 多轮 `[running→summarized]*` 循环 + `max_rounds` 每轮重校验双闸，闭合 9.5a review §8 三条须知悉项；改动 `moderator.ts`/`review-orchestrator.ts`/`queue.service.ts` 三文件，零 schema 变更、零前端改动、默认 mock、不调真实 LLM；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5b-multiround.js` 真实实例断言 **22/22**、standing `smoke-runtime.js` **31/31** 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5b_MultiRound_Debate_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |
+| **9.5b** | **Go**（P1 Multi-Round Debate Backend（P1 收官）；workbuddy-coder 在 9.5a 多轮地基上实现 round-2 mock debater（冲突启发式 + phase='debate'）+ 多轮 `[running→summarized]*` 循环 + `max_rounds` 每轮重校验双闸，闭合 9.5a review §8 三条须知悉项；改动 `moderator.ts`/`review-orchestrator.ts`/`queue.service.ts` 三文件，零 schema 变更、零前端改动、默认 mock、不调真实 LLM；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5b-multiround.js` 真实实例断言 **22/22**、standing `smoke-runtime.js` **31/31** 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5b_MultiRound_Debate_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |
+| **5.0** | **In Progress**（Platform RBAC Enforcement + User Management + Audit Logging；workbuddy-coder 落地 `@RequirePermissions`+`PermissionsGuard` 两级全局守卫、`JwtAuthGuard` 补 `permissions`、`AuditService`+`AuditInterceptor` 全量写操作留痕、`Users` 管理 API（RBAC 保护、`mock_password_hash`、软删）、`reviews`/`roles` RBAC 示范标注；零 schema 变更、零前端改动、`tsc(api+web)` 0 errors、`prisma migrate status` up to date、`smoke-runtime.js` 31/31、`verify-sprint-5-rbac-audit.js` **22/22**、`verify-9.5b-multiround.js` 22/22、`verify-review-history.js` 16/16、`verify-quality.js` 32/32、密钥扫描干净；证据文档 `Sprint_5.0_Platform_RBAC_Audit_Backend.md` 已就位；**未提交**，待 Codex 标准 Guard 复审） |

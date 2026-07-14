@@ -1,11 +1,9 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, ParseUUIDPipe, UseGuards, UseInterceptors, ClassSerializerInterceptor } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, ParseUUIDPipe, UseInterceptors, ClassSerializerInterceptor } from '@nestjs/common';
 import { KnowledgeService } from './knowledge.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { SearchTestDto } from './dto/search-test.dto';
 
 @Controller('knowledge')
-@UseGuards(JwtAuthGuard)
 @UseInterceptors(ClassSerializerInterceptor)
 export class KnowledgeController {
   constructor(private readonly knowledgeService: KnowledgeService) {}

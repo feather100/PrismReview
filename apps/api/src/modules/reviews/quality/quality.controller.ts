@@ -18,11 +18,9 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
   UseInterceptors,
   ClassSerializerInterceptor,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
   AuthUser,
@@ -30,7 +28,6 @@ import {
 import { QualityService } from './quality.service';
 
 @Controller('quality')
-@UseGuards(JwtAuthGuard)
 @UseInterceptors(ClassSerializerInterceptor)
 export class QualityController {
   constructor(private readonly qualityService: QualityService) {}

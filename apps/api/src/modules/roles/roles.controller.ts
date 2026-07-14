@@ -1,17 +1,17 @@
-import { Controller, Get, Post, Body, Param, Query, Delete, ParseUUIDPipe, UseGuards, UseInterceptors, ClassSerializerInterceptor } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Delete, ParseUUIDPipe, UseInterceptors, ClassSerializerInterceptor } from '@nestjs/common';
 import { RolesService } from './roles.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { RoleBriefDto, RoleDetailDto } from './dto/role-response.dto';
 
 @Controller('roles')
-@UseGuards(JwtAuthGuard)
 @UseInterceptors(ClassSerializerInterceptor)
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @Get()
+  @RequirePermissions('role.read')
   async listRoles(
     @CurrentUser() user: AuthUser,
     @Query('excludeIds') excludeIds?: string,
@@ -22,6 +22,7 @@ export class RolesController {
   }
 
   @Get(':roleId')
+  @RequirePermissions('role.read')
   async getRole(
     @CurrentUser() user: AuthUser,
     @Param('roleId', new ParseUUIDPipe({ version: '4' })) roleId: string,
@@ -30,6 +31,7 @@ export class RolesController {
   }
 
   @Post()
+  @RequirePermissions('role.write')
   async createRole(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateRoleDto,
@@ -38,6 +40,7 @@ export class RolesController {
   }
 
   @Post(':roleId/versions')
+  @RequirePermissions('role.write')
   async createVersion(
     @CurrentUser() user: AuthUser,
     @Param('roleId', new ParseUUIDPipe({ version: '4' })) roleId: string,
@@ -47,6 +50,7 @@ export class RolesController {
   }
 
   @Post(':roleId/activate-version')
+  @RequirePermissions('role.write')
   async activateVersion(
     @CurrentUser() user: AuthUser,
     @Param('roleId', new ParseUUIDPipe({ version: '4' })) roleId: string,
@@ -56,6 +60,7 @@ export class RolesController {
   }
 
   @Post(':roleId/disable')
+  @RequirePermissions('role.write')
   async disableRole(
     @CurrentUser() user: AuthUser,
     @Param('roleId', new ParseUUIDPipe({ version: '4' })) roleId: string,
@@ -64,6 +69,7 @@ export class RolesController {
   }
 
   @Delete(':roleId')
+  @RequirePermissions('role.delete')
   async deleteRole(
     @CurrentUser() user: AuthUser,
     @Param('roleId', new ParseUUIDPipe({ version: '4' })) roleId: string,
