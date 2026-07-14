@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, Sse, Res, UseGuards, UseInterceptors, ClassSerializerInterceptor, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, Sse, Res, UseGuards, UseInterceptors, ClassSerializerInterceptor, ParseUUIDPipe } from '@nestjs/common';
 import { Response } from 'express';
 import { Observable } from 'rxjs';
 import { ReviewsService } from './reviews.service';
@@ -34,6 +34,22 @@ export class ReviewsController {
     @Query() query: ListReviewsQuery,
   ) {
     return this.reviewsService.listReviews(user, query);
+  }
+
+  @Patch(':reviewId/archive')
+  async archive(
+    @CurrentUser() user: AuthUser,
+    @Param('reviewId', new ParseUUIDPipe({ version: '4' })) reviewId: string,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.archiveReview(reviewId, user);
+  }
+
+  @Patch(':reviewId/unarchive')
+  async unarchive(
+    @CurrentUser() user: AuthUser,
+    @Param('reviewId', new ParseUUIDPipe({ version: '4' })) reviewId: string,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.unarchiveReview(reviewId, user);
   }
 
   @Get(':reviewId')

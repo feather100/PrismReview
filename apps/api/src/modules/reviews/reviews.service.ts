@@ -59,26 +59,110 @@ export class ReviewsService {
   }
 
   async listReviews(user: any, query: ListReviewsQuery) {
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit = query.limit && query.limit > 0 ? query.limit : 20;
+    const offset = typeof query.offset === 'number' ? query.offset : (page - 1) * limit;
+
+    // Tenant + ownership isolation (沿用既有 tenant 隔离)
     const where: any = { tenantId: user.tenantId, createdBy: user.id };
-    if (query.status) where.status = query.status;
+
+    // status 筛选：支持多值 "completed,failed" → WHERE status IN (...)
+    if (query.status) {
+      const statuses = query.status
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+      if (statuses.length) where.status = { in: statuses };
+    } else {
+      // 默认列表隐藏已归档项（"我的评审"聚焦活跃评审；
+      // 仅当用户显式筛选 status=archived 时才展示归档项）。
+      where.status = { not: 'archived' };
+    }
     if (query.mode) where.mode = query.mode;
+
+    // search：title / objective 模糊匹配（Postgres 下 mode:'insensitive' → ILIKE）
+    if (query.search) {
+      where.OR = [
+        { title: { contains: query.search, mode: 'insensitive' } },
+        { objective: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.review.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        skip: query.offset,
-        take: query.limit,
+        skip: offset,
+        take: limit,
       }),
       this.prisma.review.count({ where }),
     ]);
 
+    const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
+
     return {
       items: items.map(r => this.toResponseDto(r)),
       total,
-      limit: query.limit,
-      offset: query.offset,
+      page,
+      limit,
+      totalPages,
+      offset,
     };
+  }
+
+  /**
+   * Archive a review. Allowed source statuses: completed / failed / aborted.
+   * A `running` review is first interrupted (HITL pause) and then archived.
+   * Ownership is enforced via tenantId + createdBy.
+   */
+  async archiveReview(reviewId: string, user: any): Promise<ReviewResponseDto> {
+    const review = await this.assertOwned(reviewId, user.tenantId, user.id);
+
+    let currentStatus = review.status;
+    if (currentStatus === 'running') {
+      // 运行中先中断（HITL 暂停），再归档
+      await this.prisma.review.update({
+        where: { id: reviewId },
+        data: { status: 'interrupted' },
+      });
+      currentStatus = 'interrupted';
+    }
+
+    const ARCHIVE_ALLOWED = ['completed', 'failed', 'aborted', 'interrupted'];
+    if (!ARCHIVE_ALLOWED.includes(currentStatus)) {
+      throw new BadRequestException(
+        `Review status "${currentStatus}" cannot be archived. Allowed: completed, failed, aborted, running (auto-interrupt).`,
+      );
+    }
+
+    const updated = await this.prisma.review.update({
+      where: { id: reviewId },
+      data: { status: 'archived' },
+    });
+    this.logger.log(`Review ${reviewId} archived (was ${currentStatus})`);
+    return this.toResponseDto(updated);
+  }
+
+  /**
+   * Unarchive a review. Restores an `archived` review back to `completed`
+   * (business-sensible default: archived items are typically finished reviews
+   * whose report should remain viewable). No schema change required.
+   */
+  async unarchiveReview(reviewId: string, user: any): Promise<ReviewResponseDto> {
+    const review = await this.assertOwned(reviewId, user.tenantId, user.id);
+
+    if (review.status !== 'archived') {
+      throw new BadRequestException(
+        `Review status "${review.status}" is not archived; cannot unarchive.`,
+      );
+    }
+
+    const updated = await this.prisma.review.update({
+      where: { id: reviewId },
+      data: { status: 'completed' },
+    });
+    this.logger.log(`Review ${reviewId} unarchived → completed`);
+    return this.toResponseDto(updated);
   }
 
   async getReview(reviewId: string, user: any): Promise<ReviewResponseDto> {
@@ -543,6 +627,18 @@ export class ReviewsService {
         `Review status "${review.status}" does not allow this operation. Allowed: ${allowedStatuses.join(', ')}`,
       );
     }
+    return review;
+  }
+
+  /**
+   * Ownership check: the review must belong to the caller's tenant AND be
+   * created by the caller (so "我的评审" stays per-user, not just per-tenant).
+   */
+  private async assertOwned(reviewId: string, tenantId: string, userId: string) {
+    const review = await this.prisma.review.findFirst({
+      where: { id: reviewId, tenantId, createdBy: userId },
+    });
+    if (!review) throw new NotFoundException('Review not found');
     return review;
   }
 

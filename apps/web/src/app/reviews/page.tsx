@@ -1,22 +1,52 @@
 'use client';
 import React, { useEffect, useState } from 'react';
-import { Typography, Table, Tag, Space, Button, Alert, Segmented, Tooltip } from 'antd';
+import { Typography, Table, Tag, Space, Button, Alert, Input, Popconfirm, Empty } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { apiClient, ReviewListItem, GetReviewsParams } from '../../lib/api-client/client';
 
 const { Title, Text } = Typography;
+const { CheckableTag } = Tag;
 
 const statusMap: Record<string, { text: string; color: string }> = {
+  created: { text: '已创建', color: 'default' },
   draft: { text: '草稿', color: 'default' },
   diagnosing: { text: '诊断中', color: 'processing' },
   ready: { text: '待评审', color: 'processing' },
+  diagnosed: { text: '已诊断', color: 'processing' },
   running: { text: '评审中', color: 'processing' },
   interrupted: { text: '已中断', color: 'warning' },
   summarizing: { text: '总结中', color: 'processing' },
+  summarized: { text: '总结中', color: 'processing' },
   completed: { text: '已完成', color: 'success' },
   failed: { text: '失败', color: 'error' },
+  aborted: { text: '已中止', color: 'warning' },
   archived: { text: '已归档', color: 'default' },
 };
+
+// 状态筛选桶（多选）；"进行中" = 一组活跃状态，"已归档" = archived
+const STATUS_BUCKETS: { key: string; label: string; statuses: string[] }[] = [
+  { key: 'active', label: '进行中', statuses: ['running', 'interrupted', 'summarized'] },
+  { key: 'created', label: '已创建', statuses: ['created'] },
+  { key: 'diagnosed', label: '已诊断', statuses: ['diagnosed'] },
+  { key: 'completed', label: '已完成', statuses: ['completed'] },
+  { key: 'failed', label: '失败', statuses: ['failed'] },
+  { key: 'aborted', label: '已中止', statuses: ['aborted'] },
+  { key: 'archived', label: '已归档', statuses: ['archived'] },
+];
+
+// 可归档的源状态：completed / failed / aborted / interrupted（running 由后端先中断再归档）
+const ARCHIVE_ALLOWED = new Set(['completed', 'failed', 'aborted', 'interrupted', 'running']);
+
+function buildStatusParam(selected: string[]): string | undefined {
+  if (!selected.length) return undefined;
+  const set = new Set<string>();
+  for (const key of selected) {
+    const bucket = STATUS_BUCKETS.find((b) => b.key === key);
+    if (bucket) bucket.statuses.forEach((s) => set.add(s));
+  }
+  return set.size ? Array.from(set).join(',') : undefined;
+}
 
 export default function ReviewListPage() {
   const router = useRouter();
@@ -26,19 +56,24 @@ export default function ReviewListPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedBuckets, setSelectedBuckets] = useState<string[]>([]);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState(''); // debounced 值，真正用于请求
 
-  const fetchReviews = async (page: number, pageSize: number, status: string) => {
+  // 搜索框 debounce(300ms)
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const fetchReviews = async (page: number, pageSize: number, buckets: string[], q: string) => {
     setLoading(true);
     setError(null);
     try {
-      const params: GetReviewsParams = {
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      };
-      if (status !== 'all') {
-        params.status = status;
-      }
+      const params: GetReviewsParams = { page, limit: pageSize };
+      const statusParam = buildStatusParam(buckets);
+      if (statusParam) params.status = statusParam;
+      if (q) params.search = q;
       const res = await apiClient.getReviews(params);
       setData(res.items);
       setTotal(res.total);
@@ -49,15 +84,52 @@ export default function ReviewListPage() {
     }
   };
 
+  // 搜索词 / 筛选 / 分页变化时重新拉取（搜索与筛选切换时回到第 1 页）
   useEffect(() => {
-    fetchReviews(pagination.current, pagination.pageSize, statusFilter);
-  }, [pagination.current, pagination.pageSize, statusFilter]);
+    fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagination.current, pagination.pageSize, selectedBuckets, search]);
 
   const handleTableChange = (newPagination: any) => {
     setPagination({
       current: newPagination.current,
       pageSize: newPagination.pageSize,
     });
+  };
+
+  const toggleBucket = (key: string) => {
+    setSelectedBuckets((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  const clearBuckets = () => {
+    setSelectedBuckets([]);
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(e.target.value);
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  const handleArchive = async (id: string) => {
+    try {
+      await apiClient.archiveReview(id);
+      await fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search);
+    } catch (err: any) {
+      setError(err.message || '归档失败。');
+    }
+  };
+
+  const handleUnarchive = async (id: string) => {
+    try {
+      await apiClient.unarchiveReview(id);
+      await fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search);
+    } catch (err: any) {
+      setError(err.message || '取消归档失败。');
+    }
   };
 
   const columns = [
@@ -108,10 +180,12 @@ export default function ReviewListPage() {
         const isRunning = record.status === 'running' || record.status === 'interrupted' || record.status === 'summarized';
         const isCompleted = record.status === 'completed';
         const isFailed = record.status === 'failed';
+        const isArchived = record.status === 'archived';
+        const canArchive = ARCHIVE_ALLOWED.has(record.status);
 
         return (
-          <Space size="middle">
-            {/* 诊断页入口 (依据状态变化文案) */}
+          <Space size="middle" wrap>
+            {/* 诊断页入口（依据状态变化文案） */}
             <Button
               type={isCreated || isDiagnosed ? 'primary' : 'link'}
               size="small"
@@ -121,59 +195,64 @@ export default function ReviewListPage() {
             </Button>
 
             {/* 进入会议室 */}
-            <Tooltip
-              title={
-                isCreated
-                  ? '请先完成诊断并确认评审团'
-                  : isDiagnosed
-                  ? '请先确认评审团并开始评审'
-                  : ''
-              }
+            <Button
+              type={isRunning ? 'primary' : 'link'}
+              size="small"
+              disabled={isCreated || isDiagnosed || isFailed}
+              onClick={() => {
+                if (!(isCreated || isDiagnosed || isFailed)) {
+                  router.push(`/reviews/${record.id}/meeting`);
+                }
+              }}
             >
-              <Button
-                type={isRunning ? 'primary' : 'link'}
-                size="small"
-                disabled={isCreated || isDiagnosed || isFailed}
-                onClick={() => {
-                  if (!(isCreated || isDiagnosed || isFailed)) {
-                    router.push(`/reviews/${record.id}/meeting`);
-                  }
-                }}
-              >
-                进入会议室
-              </Button>
-            </Tooltip>
+              进入会议室
+            </Button>
 
             {/* 查看报告 */}
-            <Tooltip
-              title={
-                isCreated
-                  ? '评审尚未开始，暂无报告'
-                  : isDiagnosed
-                  ? '评审尚未完成，暂无报告'
-                  : isRunning
-                  ? '评审完成后可查看报告'
-                  : ''
-              }
+            <Button
+              type={isCompleted ? 'primary' : 'link'}
+              size="small"
+              disabled={!isCompleted}
+              onClick={() => {
+                if (isCompleted) {
+                  router.push(`/reviews/${record.id}/report`);
+                }
+              }}
             >
-              <Button
-                type={isCompleted ? 'primary' : 'link'}
-                size="small"
-                disabled={!isCompleted}
-                onClick={() => {
-                  if (isCompleted) {
-                    router.push(`/reviews/${record.id}/report`);
-                  }
-                }}
+              查看报告
+            </Button>
+
+            {/* 归档 / 取消归档 */}
+            {canArchive && (
+              <Popconfirm
+                title="确认归档该评审？"
+                description="归档后将从默认列表隐藏，可随时取消归档。"
+                okText="归档"
+                cancelText="取消"
+                onConfirm={() => handleArchive(record.id)}
               >
-                查看报告
+                <Button type="link" size="small" danger>
+                  归档
+                </Button>
+              </Popconfirm>
+            )}
+            {isArchived && (
+              <Button type="link" size="small" onClick={() => handleUnarchive(record.id)}>
+                取消归档
               </Button>
-            </Tooltip>
+            )}
           </Space>
         );
       },
     },
   ];
+
+  const hasFilter = !!search || selectedBuckets.length > 0;
+  const emptyText = hasFilter ? (
+    <Empty description="未找到匹配的评审" />
+  ) : (
+    <Empty description={<span>还没有评审，点击右上角「新建评审」创建第一个</span>} />
+  );
 
   return (
     <div>
@@ -189,26 +268,36 @@ export default function ReviewListPage() {
           type="error"
           showIcon
           style={{ marginBottom: 16 }}
-          action={<Button onClick={() => fetchReviews(pagination.current, pagination.pageSize, statusFilter)}>重试</Button>}
+          action={<Button onClick={() => fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search)}>重试</Button>}
         />
       )}
 
-      <div style={{ marginBottom: 16 }}>
-        <Segmented
-          options={[
-            { label: '全部', value: 'all' },
-            { label: '已创建', value: 'created' },
-            { label: '已诊断', value: 'diagnosed' },
-            { label: '评审中', value: 'running' },
-            { label: '已完成', value: 'completed' },
-            { label: '失败', value: 'failed' },
-          ]}
-          value={statusFilter}
-          onChange={(val) => {
-            setStatusFilter(val as string);
-            setPagination(prev => ({ ...prev, current: 1 }));
-          }}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="搜索评审标题或目标..."
+          value={searchInput}
+          onChange={handleSearchChange}
+          style={{ width: 280 }}
         />
+        <Space size={[4, 4]} wrap>
+          <CheckableTag
+            checked={selectedBuckets.length === 0}
+            onChange={clearBuckets}
+          >
+            全部
+          </CheckableTag>
+          {STATUS_BUCKETS.map((b) => (
+            <CheckableTag
+              key={b.key}
+              checked={selectedBuckets.includes(b.key)}
+              onChange={() => toggleBucket(b.key)}
+            >
+              {b.label}
+            </CheckableTag>
+          ))}
+        </Space>
       </div>
 
       <Table
@@ -216,6 +305,7 @@ export default function ReviewListPage() {
         dataSource={data}
         rowKey="id"
         loading={loading}
+        locale={{ emptyText }}
         pagination={{
           current: pagination.current,
           pageSize: pagination.pageSize,

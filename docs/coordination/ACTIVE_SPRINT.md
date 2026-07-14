@@ -7,8 +7,8 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 2.2
-- **Phase**: P2 真 LLM Moderator 接线 + LM Studio Adapter 实测（Sprint 2.1 Model Adapter 抽象层已就位，本 Sprint 把LM Studio provider 走通）
+- **Current Sprint**: Sprint 2.3（规划中）
+- **Phase**: P2 能力深化待确定（ModelAdapter 结构 + LM Studio 已验证，LongCat 留作按需接入）
 - **Status**: In Progress（代码 + 文档就绪，待入库）
 - **Last Updated**: 2026-07-14
 - **Owner**: Codex 协调（workbuddy-coder + workbuddy-docs 已交付）

@@ -146,13 +146,18 @@ export interface ReviewListItem {
 export interface ReviewListResponse {
   items: ReviewListItem[];
   total: number;
+  page: number;
   limit: number;
-  offset: number;
+  totalPages: number;
+  /** Backward-compatible offset (derived from page on the server). */
+  offset?: number;
 }
 
 export interface GetReviewsParams {
   status?: string;
   mode?: string;
+  search?: string;
+  page?: number;
   limit?: number;
   offset?: number;
 }
@@ -290,7 +295,7 @@ export const apiClient = {
         headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` },
         responseType: 'blob'
       });
-      
+
       let filename = `prismreview-${reviewId}.md`;
       const disposition = response.headers['content-disposition'];
       if (disposition && disposition.indexOf('filename=') !== -1) {
@@ -313,6 +318,34 @@ export const apiClient = {
         throw new Error(`导出 Markdown 失败: ${error.response?.data?.message || error.message}`);
       }
       throw new Error(error instanceof Error ? `导出 Markdown 失败: ${error.message}` : "导出 Markdown 失败。");
+    }
+  },
+
+  archiveReview: async (reviewId: string): Promise<ReviewResponse> => {
+    try {
+      const response = await axios.patch<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/archive`, {}, {
+        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
+      });
+      return response.data;
+    } catch (error: unknown) {
+      if (isAxiosError(error)) {
+        throw new Error(`归档评审失败: ${error.response?.data?.message || error.message}`);
+      }
+      throw new Error(error instanceof Error ? `归档评审失败: ${error.message}` : "归档评审失败。");
+    }
+  },
+
+  unarchiveReview: async (reviewId: string): Promise<ReviewResponse> => {
+    try {
+      const response = await axios.patch<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/unarchive`, {}, {
+        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
+      });
+      return response.data;
+    } catch (error: unknown) {
+      if (isAxiosError(error)) {
+        throw new Error(`取消归档失败: ${error.response?.data?.message || error.message}`);
+      }
+      throw new Error(error instanceof Error ? `取消归档失败: ${error.message}` : "取消归档失败。");
     }
   }
 };
