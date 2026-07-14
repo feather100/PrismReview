@@ -64,5 +64,5 @@ fix_uuid.js
 fix_uuid2.js
 setup-test-review.js
 
-# Sprint 9.4 one-off spine verification script (local-only, see fix_uuid*/setup-test-review convention)
-apps/api/scripts/verify-9.4-spine.js
+# Sprint 9.4 / 9.5a one-off spine verification scripts (local-only, see fix_uuid*/setup-test-review convention)
+apps/api/scripts/verify-*.js

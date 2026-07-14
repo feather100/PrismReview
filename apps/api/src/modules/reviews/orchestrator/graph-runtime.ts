@@ -12,6 +12,9 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 
 // ── Review status（Contract §2.2 / §1.1 规范集）──
+// 9.5a P2-4：补齐 9.3 物理枚举的保留值 `interrupted` / `archived`（§1.1 补充保留态）。
+//   - interrupted：非规范补充态（HITL 暂停，`interrupted → running` 恢复），非终态。
+//   - archived：生命周期标志（终态后归档），按 9.3 枚举语义归为终态集合。
 export type ReviewStatus =
   | 'created'
   | 'diagnosed'
@@ -19,7 +22,9 @@ export type ReviewStatus =
   | 'summarized'
   | 'completed'
   | 'failed'
-  | 'aborted';
+  | 'aborted'
+  | 'interrupted'
+  | 'archived';
 
 // Turn 生命周期状态（Contract §3.3）
 export type TurnStatus =
@@ -73,6 +78,8 @@ export interface ReviewState {
   usage: UsageLedger;
   // 收敛信号（P1 mock 用确定性启发式；P3 起接 rolling summary）
   convergenceScore?: number;
+  // 最近一次 Moderator 决策类型（供 summarized 条件边读取，P2-3）；9.5a 新增。
+  lastDecisionType?: ModeratorDecisionType;
   updatedAt: string; // ISO
 }
 
@@ -149,6 +156,9 @@ export const TERMINAL_STATUSES: ReadonlySet<ReviewStatus> = new Set<ReviewStatus
   'completed',
   'failed',
   'aborted',
+  // P2-4：archived 按 9.3 物理枚举语义归为终态（生命周期归档标志）。
+  // interrupted 刻意不在其中（HITL 暂停，可恢复 → running）。
+  'archived',
 ]);
 
 export function isTerminalStatus(s: string): s is ReviewStatus {

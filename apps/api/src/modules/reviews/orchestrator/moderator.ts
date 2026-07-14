@@ -85,6 +85,12 @@ export class MockModerator implements Moderator {
     } else if (!convergenceOk) {
       decisionType = 'force_stop';
       reasoning = `convergence not reached (no reviewer spoke) → force_stop (aborted)`;
+    } else if (round < gates.minRounds) {
+      // P2-2：minRounds 强制校验。未达下限即使想收敛也必须继续，
+      // 禁止 converge → 返回 advance_round。9.5a 不实现 round-2 派发，
+      // 故脊柱在 handleTurnsComplete 中保持 summarized（9.5b 接管派发 round-2）。
+      decisionType = 'advance_round';
+      reasoning = `round=${round} < minRounds=${gates.minRounds}: minRounds not met → must continue (advance_round; round-2 dispatch in 9.5b scope)`;
     }
 
     const ruleCheckResult: RuleCheckResult = {

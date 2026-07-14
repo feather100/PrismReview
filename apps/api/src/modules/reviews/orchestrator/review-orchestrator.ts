@@ -20,11 +20,36 @@ import {
   Node,
   NodeCtx,
   ReviewState,
+  ModeratorDecisionType,
   isTerminalStatus,
 } from './graph-runtime';
 import { PostgresCheckpointer } from './postgres-checkpointer';
 import { MockModerator, HardGates, DEFAULT_HARD_GATES, toDecisionRef } from './moderator';
 import { resolveHardGates } from './hard-gates';
+
+/**
+ * P2-3：summarized 节点的下一节点由 ModeratorDecision.decisionType 动态决定（条件路由，非硬编码）。
+ * 9.5a 只返回 completed / aborted / summarized 三态：
+ *   - converge / terminate_proposal → completed（收敛/终止提议通过）
+ *   - force_stop                 → aborted（硬闸/收敛 override 强停）
+ *   - advance_round / continue_debate → summarized（9.5a 不派发 round-2，保持 summarized；
+ *                                       continue_debate → running(r2) 分支留空，9.5b 填）
+ */
+type NextNode = 'completed' | 'aborted' | 'summarized';
+function routeAfterSummarized(type: ModeratorDecisionType): NextNode {
+  switch (type) {
+    case 'converge':
+    case 'terminate_proposal':
+      return 'completed';
+    case 'force_stop':
+      return 'aborted';
+    case 'advance_round':
+    case 'continue_debate':
+      return 'summarized';
+    default:
+      return 'summarized';
+  }
+}
 
 @Injectable()
 export class ReviewOrchestrator implements OnModuleInit {
@@ -74,12 +99,14 @@ export class ReviewOrchestrator implements OnModuleInit {
         { kind: 'static', from: 'created', to: 'diagnosed' },
         { kind: 'static', from: 'diagnosed', to: 'running' },
         { kind: 'static', from: 'running', to: 'summarized' },
+        // P2-3：summarized 的下一节点由 ModeratorDecision.decisionType 条件路由
+        // （读 s.lastDecisionType），不再硬编码 completed。continue_debate→running(r2)
+        // 分支留空（9.5b 填）。
         {
           kind: 'conditional',
           from: 'summarized',
-          route: (s) => (s.status === 'aborted' ? 'aborted' : 'completed'),
+          route: (s) => routeAfterSummarized(s.lastDecisionType ?? 'converge'),
         },
-        { kind: 'static', from: 'summarized', to: 'completed' },
         { kind: 'static', from: 'running', to: 'failed' },
       ],
       start: 'created',
@@ -123,9 +150,12 @@ export class ReviewOrchestrator implements OnModuleInit {
     }
 
     // 派发 round-1 并行 reviewer turns（包装 QueueService；review.start 内部按角色派发）
+    // P2-1：显式携带 round（= state.round = review.currentRound），贯通到 turn 写入，
+    // 避免 9.5 round-2 时全部错发 round=1 + 幂等键冲突。
     this.queue.enqueue('review.start', {
       reviewId: state.reviewId,
       sessionId: `session-${state.reviewId}`,
+      round: state.round,
     });
 
     return { status: 'running', currentNodeId: 'running', round: state.round };
@@ -157,12 +187,17 @@ export class ReviewOrchestrator implements OnModuleInit {
       currentNodeId: 'summarized',
       moderatorDecisions: [...state.moderatorDecisions, toDecisionRef(decision)],
       convergenceScore: decision.decisionType === 'converge' ? 1 : 0,
+      lastDecisionType: decision.decisionType, // P2-3：供 summarized 条件边读取
       updatedAt: new Date().toISOString(),
     };
     await this.checkpoint(reviewId, 'summarized', summarizedState);
     await this.persistState(reviewId, summarizedState);
 
-    if (decision.decisionType === 'force_stop') {
+    // P2-3：条件路由 —— summarized 的下一节点由 decide() 结果决定（非硬编码 completed）
+    const next = routeAfterSummarized(decision.decisionType);
+    const rid = reviewId.substring(0, 8);
+
+    if (next === 'aborted') {
       const abortedState: ReviewState = {
         ...summarizedState,
         status: 'aborted',
@@ -171,11 +206,18 @@ export class ReviewOrchestrator implements OnModuleInit {
       };
       await this.checkpoint(reviewId, 'aborted', abortedState);
       await this.persistState(reviewId, abortedState);
-      this.logger.log(`Spine: review ${reviewId.substring(0, 8)} force_stop → aborted`);
+      this.logger.log(`Spine: review ${rid} force_stop → aborted`);
       return;
     }
 
-    // converge → completed
+    if (next === 'summarized') {
+      // advance_round / continue_debate：9.5a 不派发 round-2，保持 summarized（不进 completed）。
+      // 例如 P2-2 的 minRounds 未达标，或存在待深挖冲突时，脊柱停在此态等待 9.5b 接管。
+      this.logger.log(`Spine: review ${rid} decision=${decision.decisionType} → stay summarized (round-2 dispatch is 9.5b scope)`);
+      return;
+    }
+
+    // next === 'completed'（converge / terminate_proposal）
     const completedState: ReviewState = {
       ...summarizedState,
       status: 'completed',
@@ -184,7 +226,7 @@ export class ReviewOrchestrator implements OnModuleInit {
     };
     await this.checkpoint(reviewId, 'completed', completedState);
     await this.persistState(reviewId, completedState);
-    this.logger.log(`Spine complete: review ${reviewId.substring(0, 8)} → completed (single-round)`);
+    this.logger.log(`Spine complete: review ${rid} → completed (decision=${decision.decisionType})`);
   }
 
   /**

@@ -126,6 +126,10 @@ export class QueueService implements OnModuleDestroy {
     if (!review) throw new Error(`Review not found: ${reviewId}`);
     if (review.status !== 'running') throw new Error(`Review status is "${review.status}", expected "running"`);
 
+    // P2-1：round 贯通。优先用派发链下传的 round（orchestrator nodeRunning 显式传入）；
+    // 缺失时回退到 review.currentRound（语义正确，非静默 1）。
+    const round: number = payload.round ?? (review as any).currentRound ?? 1;
+
     const selection = review.roleSelection as any;
     if (!selection?.roles?.length) throw new Error('No role selection found');
 
@@ -182,6 +186,7 @@ export class QueueService implements OnModuleDestroy {
         roleCode: dbRole.code,
         roleVersionId: dbRole.activeVersionId,
         objective: review.objective,
+        round, // P2-1：贯通到 turn 执行，供 reviewTurn.round 写入 + 语义元组幂等
       }, jobId);
     }
   }
@@ -223,21 +228,29 @@ export class QueueService implements OnModuleDestroy {
   private async executeAgentTurn(payload: any): Promise<void> {
     const { reviewId, turnIndex, roleId, roleCode, roleVersionId, objective } = payload;
 
+    // P2-1：round 必须显式贯通，不得静默回退 1。9.4 单轮恒为 1 掩盖了此缺口；
+    // 9.5 round-2 若链断路会全部错发 round=1 且导致语义元组幂等键冲突。
+    // 缺失/非法 → 拒绝该 turn（NO_RETRY），由上游修正派发链。
+    const round = payload.round;
+    if (typeof round !== 'number' || !Number.isInteger(round) || round < 1) {
+      this.logger.error(
+        `agent.turn.execute: missing/invalid round for review ${reviewId.substring(0, 8)} reviewer ${roleVersionId} (payload.round=${round}) → refuse (NO_RETRY)`,
+      );
+      throw new Error('NO_RETRY: agent.turn.execute payload.round missing or invalid');
+    }
+
     // DB idempotency（Codex 指令 1）：按语义元组 (reviewId, roleVersionId, round) 查询，
     // 天然覆盖 3 段键 `${reviewId}::${roleVersionId}::${round}` 与 4 段键
     // `${reviewId}::${roleVersionId}::${round}::${N}`（9.3 消歧后缀）—— 不依赖 idempotencyKey 字符串相等。
     const existing = await findExistingTerminalTurn(this.prisma, {
-      reviewId, roleVersionId, round: payload.round ?? 1,
+      reviewId, roleVersionId, round,
     });
     if (existing.found) {
-      this.logger.log(`Idempotent skip: turn for reviewer ${roleVersionId} round ${payload.round ?? 1} already terminal`);
+      this.logger.log(`Idempotent skip: turn for reviewer ${roleVersionId} round ${round} already terminal`);
       return;
     }
 
-    // Create ReviewTurn
-    // P1 (9.2) additive: supply new required columns (idempotencyKey + round).
-    // round defaults to 1 (round-1); idempotencyKey = `${reviewId}::${roleVersionId}::${round}`.
-    // NOTE: actual idempotency skip logic + round-2 debate remain 9.3 (runtime) scope.
+    // Create ReviewTurn — round 取派发链下传值（P2-1），idempotencyKey 与 round 一致。
     const reviewTurn = await this.prisma.reviewTurn.create({
       data: {
         reviewId,
@@ -246,8 +259,8 @@ export class QueueService implements OnModuleDestroy {
         roleVersionId,
         status: 'queued',
         startedAt: new Date(),
-        round: 1,
-        idempotencyKey: `${reviewId}::${roleVersionId}::1`,
+        round,
+        idempotencyKey: `${reviewId}::${roleVersionId}::${round}`,
       },
     });
 
@@ -339,7 +352,7 @@ export class QueueService implements OnModuleDestroy {
     const opinionCandidate: StructuredOpinion = {
       schemaVersion: '1.0',
       reviewerId: roleVersionId,
-      round: payload.round ?? 1,
+      round, // P2-1：来自派发链下传的 round（已校验）
       dimension: result.dimension,
       riskLevel: result.riskLevel as RiskLevel,
       issue: result.issue,
