@@ -10,6 +10,7 @@
 import { Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
+import { ModelAdapter } from '../provider/model-adapter';
 
 // ── Review status（Contract §2.2 / §1.1 规范集）──
 // 9.5a P2-4：补齐 9.3 物理枚举的保留值 `interrupted` / `archived`（§1.1 补充保留态）。
@@ -125,11 +126,10 @@ export interface Graph<S extends ReviewState> {
   readonly start: string; // 入口节点 id（如 'created'）
 }
 
-// ── P2/P3 注入位（Contract §2.4，P1 不注入，调用方传 undefined）──
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-export interface ModelAdapter {
-  /* P2 */
-}
+// ── P2/P3 注入位（Contract §2.4）──
+// ModelAdapter is the real abstraction introduced in Sprint 2.1
+// (provider/model-adapter.ts). P1 nodes do not consume it yet; it is
+// injected into NodeCtx at module assembly for P2 readiness.
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface MemoryService {
   /* P3 */

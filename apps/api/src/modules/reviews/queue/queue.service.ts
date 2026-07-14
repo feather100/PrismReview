@@ -3,6 +3,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { findExistingTerminalTurn } from '../orchestrator/idempotency';
 import { shouldDispatchTurn, resolveHardGates } from '../orchestrator/hard-gates';
 import { validateOpinion, StructuredOpinion, RiskLevel } from '../orchestrator/opinion';
+import { ModelAdapter, MockAdapter, SYSTEM_PROMPT, parseModelOpinion } from '../provider/model-adapter';
+import { createProviderAdapter } from '../provider/provider-factory';
 
 interface QueueJob {
   id: string;
@@ -25,6 +27,10 @@ export class QueueService implements OnModuleDestroy {
   private processing = false;
   private timer: NodeJS.Timeout | null = null;
   private processedIds = new Set<string>();  // Idempotency tracking
+
+  // Sprint 2.1: unified model adapter (default = mock via factory; external
+  // providers only when ALLOW_EXTERNAL_MODEL_CALLS=true + explicit env).
+  private readonly modelAdapter: ModelAdapter = createProviderAdapter();
 
   /**
    * 完成回调钩子（由 ReviewOrchestrator 在 onModuleInit 注入）。
@@ -274,83 +280,69 @@ export class QueueService implements OnModuleDestroy {
       data: { status: 'thinking' },
     });
 
-    // Execute provider via provider-adapter
-    const adapterPath = require('path').resolve(__dirname, '../../../../../../scripts/provider-adapter');
-    const { getProvider } = require(adapterPath);
-    
-    let provider: any;
-    try {
-      provider = getProvider();
-    } catch (err: any) {
-      // Guard error — fail closed, no retry, no fallback
-      this.logger.error(`Provider config error (no retry): ${err.message}`);
-      await this.prisma.reviewTurn.update({
-        where: { id: reviewTurn.id },
-        data: { status: 'failed', completedAt: new Date() },
-      });
-      // Create a failed opinion stub for observability
-      await this.prisma.reviewOpinion.create({
-        data: {
-          reviewId, turnId: reviewTurn.id,
-          dimension: '', riskLevel: 'info', issue: '', recommendation: '',
-          citations: [], confidenceScore: 0,
-          reasoningSummary: 'Guard error: ' + err.message.substring(0, 180),
-          modelOutputRef: JSON.stringify({ providerSource: 'failed', providerName: process.env.MODEL_PROVIDER || 'unknown', fallback: false, errorReason: err.message.substring(0, 200) }),
-        },
-      });
-      throw new Error('NO_RETRY:' + err.message);
-    }
+    // Execute provider via unified ModelAdapter abstraction (Sprint 2.1).
+    // The adapter resolves from env (default = MockAdapter); queue.service no
+    // longer reads provider env vars directly.
+    const adapter: ModelAdapter = this.modelAdapter;
+    const prompt = `You are reviewing as ${roleCode}.\n\nProposal:\n${objective}`;
 
     let result: any;
     let observability: any;
     const startTime = Date.now();
 
     try {
-      result = await provider.run(roleCode, objective);
+      const out = await adapter.complete({ prompt, system: SYSTEM_PROMPT, temperature: 0.1 });
       const durationMs = Date.now() - startTime;
-      // Success — use provider's own metadata
+      const parsed = parseModelOpinion(out.text);
+      if (!parsed || !parsed.riskLevel) {
+        throw new Error(`Unparseable model output: ${out.text.substring(0, 300)}`);
+      }
+      result = parsed;
       observability = {
-        providerSource: result.provider || provider.name,
-        providerName: provider.name,
-        modelName: result.model || 'unknown',
+        providerSource: adapter.name,
+        providerName: adapter.name,
+        modelName: out.model || 'unknown',
         fallback: false,
         durationMs,
-        tokens: undefined as any,
+        tokens: out.usage ? out.usage.totalTokens : undefined,
       };
     } catch (err: any) {
       const durationMs = Date.now() - startTime;
-      // Auth errors (401/403) — fail closed, no fallback
-      if (err.message.includes('HTTP 401') || err.message.includes('HTTP 403')) {
-        const sanitizedMsg = err.message.replace(/Bearer [a-zA-Z0-9._-]+/g, 'Bearer ***');
+      const msg: string = err?.message || String(err);
+      // Auth errors (401/403) — fail closed, no fallback (redact any leaked bearer)
+      if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) {
+        const sanitizedMsg = msg.replace(/Bearer [a-zA-Z0-9._-]+/g, 'Bearer ***');
         this.logger.error(`Auth error (no fallback): ${sanitizedMsg}`);
-        await this.prisma.reviewTurn.update({
-          where: { id: reviewTurn.id },
-          data: { status: 'failed', completedAt: new Date() },
-        });
-        await this.prisma.reviewOpinion.create({
-          data: {
-            reviewId, turnId: reviewTurn.id,
-            dimension: '', riskLevel: 'info', issue: '', recommendation: '',
-            citations: [], confidenceScore: 0,
-            reasoningSummary: 'Auth error (no fallback): ' + sanitizedMsg.substring(0, 160),
-            modelOutputRef: JSON.stringify({ providerSource: 'failed', providerName: provider.name, modelName: provider.model || 'unknown', fallback: false, errorReason: sanitizedMsg.substring(0, 200), durationMs }),
-          },
-        });
-        throw new Error('NO_RETRY:' + err.message);
+        await this.failTurnAndOpinion(reviewId, reviewTurn.id, roleCode, adapter.name, 'Auth error (no fallback): ' + sanitizedMsg.substring(0, 160), durationMs);
+        throw new Error('NO_RETRY:' + msg);
       }
-      // Runtime error — fallback to mock with warn
-      this.logger.warn(`[Fallback] ${provider.name} → mock, reason: ${err.message}`);
-      const fallbackProvider = require(adapterPath).mockProvider;
-      result = fallbackProvider(roleCode);
-      observability = {
-        providerSource: 'fallback_mock',
-        providerName: provider.name,
-        modelName: process.env.MODEL_NAME || 'unknown',
-        fallback: true,
-        fallbackReason: err.message.substring(0, 200),
-        errorReason: err.message.substring(0, 200),
-        durationMs,
-      };
+      // Guard error (missing key / misconfig) — fail closed, no fallback
+      if (msg.includes('GUARD') || msg.includes('MODEL PROVIDER GUARD')) {
+        this.logger.error(`Provider guard error (no retry): ${msg}`);
+        await this.failTurnAndOpinion(reviewId, reviewTurn.id, roleCode, adapter.name, 'Guard error: ' + msg.substring(0, 180), durationMs);
+        throw new Error('NO_RETRY:' + msg);
+      }
+      // Runtime error — fallback to mock with warn (only when a real provider was used)
+      if (adapter.name !== 'mock') {
+        this.logger.warn(`[Fallback] ${adapter.name} → mock, reason: ${msg}`);
+        const fallbackOut = await new MockAdapter().complete({ prompt, system: SYSTEM_PROMPT });
+        const parsed = parseModelOpinion(fallbackOut.text);
+        result = parsed || {};
+        observability = {
+          providerSource: 'fallback_mock',
+          providerName: adapter.name,
+          modelName: 'mock',
+          fallback: true,
+          fallbackReason: msg.substring(0, 200),
+          errorReason: msg.substring(0, 200),
+          durationMs,
+        };
+      } else {
+        // Mock itself failed (should not happen) — fail closed
+        this.logger.error(`Mock adapter error (no retry): ${msg}`);
+        await this.failTurnAndOpinion(reviewId, reviewTurn.id, roleCode, 'mock', 'Mock error: ' + msg.substring(0, 180), durationMs);
+        throw new Error('NO_RETRY:' + msg);
+      }
     }
 
     // §4.2 opinion schema 运行校验。失败 → turn failed + failed opinion 存根（不阻塞整场，其他 turn 仍可完成）。
@@ -418,6 +410,42 @@ export class QueueService implements OnModuleDestroy {
     if (obs.fallbackReason) parts.push(`fallback: ${obs.fallbackReason.substring(0, 80)}`);
     if (obs.errorReason && !obs.fallbackReason) parts.push(`err: ${obs.errorReason.substring(0, 80)}`);
     return parts.join(' | ').substring(0, 200);
+  }
+
+  /**
+   * Shared fail-closed path for guard/auth errors: mark the turn failed and
+   * write a failed-opinion stub for observability (modelOutputRef = failed
+   * state). No retry, no fallback to mock.
+   */
+  private async failTurnAndOpinion(
+    reviewId: string,
+    turnId: string,
+    roleCode: string,
+    providerName: string,
+    message: string,
+    durationMs: number,
+  ): Promise<void> {
+    void roleCode;
+    await this.prisma.reviewTurn.update({
+      where: { id: turnId },
+      data: { status: 'failed', completedAt: new Date() },
+    });
+    await this.prisma.reviewOpinion.create({
+      data: {
+        reviewId, turnId,
+        dimension: '', riskLevel: 'info', issue: '', recommendation: '',
+        citations: [], confidenceScore: 0,
+        reasoningSummary: message.substring(0, 160),
+        modelOutputRef: JSON.stringify({
+          providerSource: 'failed',
+          providerName,
+          modelName: 'unknown',
+          fallback: false,
+          errorReason: message.substring(0, 200),
+          durationMs,
+        }),
+      },
+    });
   }
 
   // ── meeting.complete coordination ──

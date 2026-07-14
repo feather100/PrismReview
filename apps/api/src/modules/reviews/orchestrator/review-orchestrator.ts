@@ -15,6 +15,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
+import { createProviderAdapter } from '../provider/provider-factory';
 import {
   Graph,
   Node,
@@ -80,7 +81,9 @@ export class ReviewOrchestrator implements OnModuleInit {
       checkpointer: this.checkpointer,
       queue: this.queue,
       prisma: this.prisma,
-      // modelAdapter / memoryService / promptService: P2/P3 注入位（P1 传 undefined）
+      // Sprint 2.1: modelAdapter injected at module assembly (P2 节点就绪位)
+      modelAdapter: createProviderAdapter(),
+      // memoryService / promptService: P3 注入位（P1 传 undefined）
     };
   }
 
