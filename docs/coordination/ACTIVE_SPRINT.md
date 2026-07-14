@@ -7,34 +7,36 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 9.5a
-- **Phase**: P1 Multi-Round Foundation（修 9.4 review P2-1~P2-4）（workbuddy-coder 实现；让 9.4 单轮脊柱在多轮语义下正确运转，为 9.5b（round-2 debater + 多轮循环）打地基；实现 round 贯通 + minRounds 强制 + 条件边真路由 + ReviewStatus 补 interrupted/archived；不实现 round-2/继续辩论/多轮循环/真 LLM/ModelAdapter(P2)/Memory·Prompt(P3)/Tool·HITL(P4)）
+- **Current Sprint**: Sprint 9.5b
+- **Phase**: P1 Multi-Round Debate Backend（P1 收官：在 9.5a 多轮地基上实现 round-2 mock debater + continue_debate 冲突检测 + 多轮 [running→summarized]* 循环 + max_rounds 每轮兜底；闭合 9.5a review §8 三条须知悉项；不改 schema / 不改前端 / 默认 mock / 不调真实 LLM；未做真 LLM Moderator(P2)/ModelAdapter(P2)/Memory·Prompt(P3)/Tool·HITL(P4)）
 - **Gate Status**: In Progress（标准 Gate；代码 + 证据就绪，待 Codex 交 `workbuddy-review` 复审）
-- **Last Updated**: 2026-07-13
+- **Last Updated**: 2026-07-14
 - **Owner**: workbuddy-coder
 
 ---
 
 ## 当前目标
 
-在 9.4（P1 编排脊柱 single-round 已落地，commit `7a8b4e6`）+ 9.1 Contract + 9.2（schema）+ 9.3（枚举）基础上，实做 **P1 多轮地基（修 9.4 review P2-1~P2-4）**（workbuddy-coder 实现，标准 Gate）：
+在 9.4（P1 编排脊柱 single-round，commit `7a8b4e6`）+ 9.5a（P1 多轮地基，修 P2-1~P2-4，未提交）+ 9.1 Contract + 9.2（schema）+ 9.3（枚举）基础上，实做 **P1 收官：多轮回合（round-2 + 多轮循环 + max_rounds 兜底）**（workbuddy-coder 实现，标准 Gate），闭合 9.5a review §8 三条须知悉项：
 
-- **P2-1 `round` 贯通**：`nodeRunning` 派发 `review.start` 显式带 `round`（= `review.currentRound`）；`executeReviewStart` 读并传播 `round` 到 `agent.turn.execute`；`executeAgentTurn` **强制要求 `payload.round`**（缺失/非法即 `NO_RETRY` 拒绝，不静默回退 1）；`reviewTurn.round` + `idempotencyKey` 取派发值；语义元组幂等按收到 round 查（覆盖 3/4 段键）。
-- **P2-2 `minRounds` 强制校验**：`MockModerator.decide()` 在 `round < gates.minRounds` 时禁 converge → 返回 `advance_round`（保持 `summarized`，不进 completed）；`min_rounds=1` 时 9.4 单轮行为不变。
-- **P2-3 Graph 条件边真做状态路由**：新增纯函数 `routeAfterSummarized(type)`，映射 `converge`/`terminate_proposal`→`completed`、`force_stop`→`aborted`、`advance_round`/`continue_debate`→`summarized`；`buildGraph()` 移除硬编码 `summarized→completed`，`summarized` 条件边读 `state.lastDecisionType`；`handleTurnsComplete` 按 `decide()` 结果动态路由（非硬编码）。留 `continue_debate → running(r2)` 空分支（9.5b 填）。
-- **P2-4 `ReviewStatus` 补 `interrupted`/`archived`**：`graph-runtime.ts` 联合类型 + `TERMINAL_STATUSES` 补 `archived`（终态）；`interrupted` 刻意非终态（HITL 暂停可恢复）。
+- **① `continue_debate → running(r2)` 已实现**：`routeAfterSummarized` 的 `advance_round`/`continue_debate` 均返 `running`；`handleTurnsComplete` 新增 `next==='running'` 分支 → `currentRound++` + 派发 round-N（9.5a 留空的 `summarized` 空分支已闭合）。
+- **② `max_rounds` 每轮重校验双闸**：`Moderator.decide()` 在 `round >= maxRounds` 返 `force_stop`；`handleTurnsComplete` 派发前防御性 `if (nextRound > maxRounds) → force_stop→aborted`；起点闸（9.4/9.5a 既有）保留。满足 Contract §5.3"每转移前校验"。
+- **③ `advance_round` 也派发 round-2**：`advance_round` 与 `continue_debate` 统一路由到 `running` 节点，均触发 `currentRound++` + round-N 派发（9.5a 使 review 永久停留 `summarized` 的问题已修复）。
+- **round-2 mock debater**：`Moderator` 新增冲突检测启发式（本轮 ≥2 条 high-risk opinion → `continue_debate`）+ `detectConflict(reviewId, round)` 私有方法；`queue.service.ts` 派发 `phase: round>=2?'debate':'round_robin'`，`agent.turn.execute` jobId 带 `r${round}`；确定性、不依赖真实模型、`max_cost_per_review=0`。
+- **round-scoped 幂等与派发**：`checkMeetingComplete`/`executeMeetingComplete` 按 `review.currentRound` 过滤 terminal count、jobId 带 `.r${currentRound}`，杜绝 round 串扰与 round-2 误拦截（9.5a 单轮下不可见的多轮 correctness 关键）。
+- **多轮循环**：`[running→summarized]*→(completed|aborted)` 闭环，`summarized` 条件边读 `state.lastDecisionType` 驱动下一次路由。
 
-- 新增 `apps/api/src/modules/reviews/orchestrator/` 模块（graph-runtime / opinion / moderator / idempotency / hard-gates / postgres-checkpointer / review-orchestrator / index），落地 Contract §2–§6 全部类型与契约；
+- 复用 9.4/9.5a 既有 `apps/api/src/modules/reviews/orchestrator/` 模块（graph-runtime / opinion / moderator / idempotency / hard-gates / postgres-checkpointer / review-orchestrator / index），本 sprint 仅改 `moderator.ts` / `review-orchestrator.ts` / `queue.service.ts` 三文件：
 - `ReviewOrchestrator` **包装**既有 `QueueService`（不替换）：经 `queue.completionHook` 注入回调，turn 全部终态后触发 `handleTurnsComplete` → mock Moderator `converge` → `completed`；每节点 `checkpointer.save`；
 - round-1 派发走 `QueueService.enqueue('review.start')`（既有 `executeReviewStart`/`executeAgentTurn` 内部含 DB 幂等 + 每评审员硬闸，零重写）；
-- mock Moderator（仅 converge，单轮无 round-2/继续辩论）+ 硬闸（maxRounds=3 / maxTurnsPerReviewer=3 / minRounds=1 / maxTokens=200000 / maxCost=0）+ 每条决策落 `ModeratorDecision` 审计；
+- mock Moderator（converge / continue_debate 冲突启发式 / advance_round / force_stop 四类决策）+ 硬闸（maxRounds=3 / maxTurnsPerReviewer=3 / minRounds=1 / maxTokens=200000 / maxCost=0）+ 每条决策落 `ModeratorDecision` 审计；
 - turn 幂等按**语义元组** `(reviewId, roleVersionId, round)` 查询（Codex 指令 1，CRITICAL），天然覆盖 3 段 `${rid}::${rvid}::${round}` 与 4 段 `${rid}::${rvid}::${round}::${N}` 键，不依赖 idempotencyKey 字符串相等；
 - opinion schema 运行校验（§4.2：schemaVersion 正则 / dimension / riskLevel 枚举 / issue / recommendation / citations / confidenceScore[0,100] 整数 / modelOutputRef 可 JSON.parse），失败 → turn failed + 失败存根；
 - checkpoint/resume：Postgres `ReviewCheckpoint`（sequence 单调，load 取最大 = resume 锚点）；
 - `queue.service.ts` 泛化 `applyPilotRoleCap` 语义为 `max_turns_per_reviewer`（硬闸 `shouldDispatchTurn`），与 §5.2 对齐；
 - 前端零改动（API 契约保留）；默认 mock（max_cost_per_review=0，不调真实 LLM）；
-- 验证：`apps/api/scripts/verify-9.4-spine.js` 对真实 Prisma + 真实 QueueService/ReviewOrchestrator 实例断言 12/12（幂等 3/4 段 + round 过滤 + reviewer 作用域 / 硬闸第 4 个不派发 / checkpoint load 最新 / Moderator converge + 审计 passed=true / 全链路脊柱 completed + per-node checkpoint / resume from summarized → completed）；tsc(api+web) 0 errors；Docker 全栈实跑；migrate deploy up to date；密钥扫描干净（仅历史 docs 脱敏占位符，本次代码零命中）；
-- 产出 `docs/coordination/Sprint_9.4_Orchestrator_Spine_Backend.md`（实现记录）+ 本文件滚动到 9.4。**未执行 git commit / push**（标准 Gate 红线，待复审）。
+- 验证：`apps/api/scripts/verify-9.5b-multiround.js` 对真实 Prisma + 真实 QueueService/ReviewOrchestrator/MockModerator 实例断言 **22/22**（S0 单轮回归 4 + S1 三轮回合到顶 aborted/currentRound=3/决策序列 continue_debate×2+force_stop/turn round 1,2,3/debate phase/第4轮不派发/per-node checkpoint/审计 passed/幂等 3 段+4 段键 + P2-1 一致性 + S2 2 轮回合 + S3 advance_round 派发 round-2）；standing `scripts/smoke-runtime.js` **31/31** 回归；tsc(api+web) 0 errors；Docker Postgres healthy；migrate deploy up to date（零迁移）；密钥扫描干净（仅历史 docs 脱敏占位符，本次代码零命中）；
+- 产出 `docs/coordination/Sprint_9.5b_MultiRound_Debate_Backend.md`（实现记录，新增）+ 本文件滚动到 9.5b。**未执行 git commit / push**（标准 Gate 红线，待复审）。
 
 > 9.3 已 Go（commit `c7158ab`）：枚举物理重命名 + 前后端 6 处引用 + idempotencyKey 语义键回填修正，为 9.4 的 graph 脊柱铺好 `Review.status` 文本列与枚举集。9.5（round-2 debate / 多轮 / ModelAdapter(P2) 等）明确在范围外，本次未触碰。
 - 新增 `ReviewCheckpoint` / `ModeratorDecision` 两表；`ReviewTurn` / `ReviewOpinion` / `Review` 仅加列（`round` / `idempotencyKey` / `schemaVersion` / `currentRound` / `currentNodeId` + 反向关系）；
@@ -66,8 +68,9 @@
 
 - `docs/coordination/Sprint_9.1_Orchestrator_Spine_Contract.md`（9.1 主契约，9.4 的输入基线）
 - `docs/coordination/Sprint_9.4_Orchestrator_Spine_Backend.md`（9.4 实现记录）
-- `docs/coordination/Sprint_9.5a_MultiRound_Foundation_Backend.md`（本次实现记录，新增）
-- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 9.5a）
+- `docs/coordination/Sprint_9.5a_MultiRound_Foundation_Backend.md`（9.5a 多轮地基实现记录）
+- `docs/coordination/Sprint_9.5b_MultiRound_Debate_Backend.md`（9.5b 多轮回合实现记录，新增）
+- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 9.5b）
 
 ---
 
@@ -76,7 +79,7 @@
 - **改业务代码（本次允许，标准 Gate 范围）**：新增 `orchestrator/` 模块、编辑 `queue.service.ts`/`reviews.service.ts`/`reviews.module.ts`；但**不写密钥**、**不改 schema**（9.2 已加列，9.4 零迁移）、**不改前端**（API 契约保留）、**不改 `REVIEW_STATUS_FLOW` 既有枚举语义**。
 - **不运行真实 LLM**：默认 mock provider（`max_cost_per_review=0`）；dev-only lmstudio 试点受 §7 守卫，本次不启用（`MODEL_PROVIDER` 保持 unset/mock）。
 - **不写密钥**：仅描述 env 守卫语义；`provider-adapter` 的 `Authorization` 头拼接处不打印；`MODEL_API_KEY` 不落库/不提交。
-- **不越界 9.5b**：9.5a 仅修 9.4 review 的 4 条 P2 地基（round 贯通 / minRounds 强制 / 条件边真路由 / Status 补值）；**不实现** round-2 debate turns 派发 / `continue_debate` 冲突检测 / 多轮 `[running→summarized]*` 循环 / opinion 校验规则改动 / 任何 schema 变更 / 真 LLM / `ModelAdapter`(P2) / `Memory`·`Prompt`(P3) / `Tool`·`HITL`(P4)。`continue_debate → running(r2)` 与 `advance_round` 保持分支留空，待 9.5b 接管。
+- **不越界 P2+（9.5b 范围外）**：9.5b 实现 round-2 mock debater（冲突启发式 + phase='debate' 确定性派发）+ 多轮 `[running→summarized]*` 循环 + `max_rounds` 每轮兜底；**不实现**真 LLM Moderator(P2) / `ModelAdapter` 泛化(P2) / `Memory`·`Prompt` Service(P3) / `Tool`·`HITL`(P4) / opinion 校验规则改动 / 任何 schema 变更 / 前端改动。三条 9.5a 须知悉项（`continue_debate→running(r2)`、每轮 `max_rounds` 重校验、`advance_round` 派发 round-2）均已闭合。
 - **不执行 git commit / push**：标准 Gate 红线，待 Codex 交 `workbuddy-review` 复审后再决定。
 - **文档落点正确**：本实现记录与 `ACTIVE_SPRINT.md` 同目录 `docs/coordination/`。
 - 密钥扫描净：扫描仅命中历史 `docs/coordination` 脱敏占位符（`sk-xxxxxxxxxxxxxxxx`），非真实 Key、非本次文件；本次新增/修改源码零命中。
@@ -109,4 +112,5 @@
 | **9.2** | **Go**（P1 Additive Schema Migration；2 新表 + 3 既模型加列 + Prisma 迁移实跑 + 历史回填 + 写入点修复；标准 Gate 复审通过，commit `ad5c6cf`） |
 | **9.3** | **Go**（P1 Enum Migration + Ref Update；workbuddy-coder 按 §7.6 物理重命名 `Review.status` 枚举 + 重写 `REVIEW_STATUS_FLOW` + 前后端 6 处引用更新 + 修正 9.2 idempotencyKey 回填为语义键；tsc(api+web) 0 errors、Docker 全栈实跑、migration deploy 成功、回填 0 行 PK、3 路冒烟全绿、密钥扫描干净；commit `c7158ab`，为 9.4 graph 脊柱铺好枚举环境） |
 | **9.4** | **Go**（P1 Orchestrator Spine（single-round）；workbuddy-coder 实现自研 graph runtime + ReviewOrchestrator（包装 QueueService）+ round-1 + mock Moderator（仅 converge）+ checkpoint/resume + opinion 校验 + turn 幂等（语义元组，覆盖 3/4 段键）；tsc(api+web) 0 errors、Docker 全栈实跑、migrate deploy up to date、`apps/api/scripts/verify-9.4-spine.js` 真实实例断言 12/12、standing smoke 31/31、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.4_Orchestrator_Spine_Backend.md` 就位；commit `7a8b4e6`，为 9.5a 多轮地基铺好脊柱） |
-| **9.5a** | **In Progress**（P1 Multi-Round Foundation（修 9.4 review P2-1~P2-4）；workbuddy-coder 实现 round 贯通 + minRounds 强制 + 条件边真路由 + ReviewStatus 补 interrupted/archived；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5a-multiround-foundation.js` 真实实例断言 15/15（P2-1/2/3/4 + 9.4 单轮回归）、standing smoke 31/31 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5a_MultiRound_Foundation_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |
+| **9.5a** | **Go**（P1 Multi-Round Foundation（修 9.4 review P2-1~P2-4）；workbuddy-coder 实现 round 贯通 + minRounds 强制 + 条件边真路由 + ReviewStatus 补 interrupted/archived；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5a-multiround-foundation.js` 真实实例断言 15/15（P2-1/2/3/4 + 9.4 单轮回归）、standing smoke 31/31 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5a_MultiRound_Foundation_Backend.md` 已就位；9.5b 在其上闭合三条须知悉项，标准 Gate 复审建议 Go） |
+| **9.5b** | **In Progress**（P1 Multi-Round Debate Backend（P1 收官）；workbuddy-coder 在 9.5a 多轮地基上实现 round-2 mock debater（冲突启发式 + phase='debate'）+ 多轮 `[running→summarized]*` 循环 + `max_rounds` 每轮重校验双闸，闭合 9.5a review §8 三条须知悉项；改动 `moderator.ts`/`review-orchestrator.ts`/`queue.service.ts` 三文件，零 schema 变更、零前端改动、默认 mock、不调真实 LLM；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5b-multiround.js` 真实实例断言 **22/22**、standing `smoke-runtime.js` **31/31** 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5b_MultiRound_Debate_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |

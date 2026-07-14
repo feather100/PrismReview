@@ -177,7 +177,8 @@ export class QueueService implements OnModuleDestroy {
       }
 
       const turnIndex = i + 1;
-      const jobId = `agent.turn.execute.${reviewId}.${turnIndex}`;
+      // 9.5b 多轮：job id 带 round，避免 round-1 已处理后 processedIds 命中导致 round-2 不派发
+      const jobId = `agent.turn.execute.${reviewId}.r${round}.${turnIndex}`;
 
       this.enqueue('agent.turn.execute', {
         reviewId,
@@ -187,6 +188,8 @@ export class QueueService implements OnModuleDestroy {
         roleVersionId: dbRole.activeVersionId,
         objective: review.objective,
         round, // P2-1：贯通到 turn 执行，供 reviewTurn.round 写入 + 语义元组幂等
+        // 9.5b：round>=2 的辩论轮标记为 debate phase（mock debater，Contract §10）
+        phase: round >= 2 ? 'debate' : 'round_robin',
       }, jobId);
     }
   }
@@ -251,11 +254,13 @@ export class QueueService implements OnModuleDestroy {
     }
 
     // Create ReviewTurn — round 取派发链下传值（P2-1），idempotencyKey 与 round 一致。
+    // phase 来自派发链（round>=2 为 debate，Contract §10 mock debater）。
+    const turnPhase = payload.phase === 'debate' ? 'debate' : 'round_robin';
     const reviewTurn = await this.prisma.reviewTurn.create({
       data: {
         reviewId,
         turnIndex,
-        phase: 'round_robin',
+        phase: turnPhase,
         roleVersionId,
         status: 'queued',
         startedAt: new Date(),
@@ -426,21 +431,25 @@ export class QueueService implements OnModuleDestroy {
     const expectedCount = selection?.roles?.length ?? 0;
     if (expectedCount === 0) return;
 
-    const terminalCount = await this.prisma.reviewTurn.count({
-      where: { reviewId, status: { in: ['completed', 'failed', 'timeout'] } },
+    // 9.5b 多轮：按当前轮次 scope 完成判定。累计 terminal 数跨轮累加，须用 round 过滤，
+    // 否则 round-2 第一个 turn 完成时（累计 terminal 已 ≥ expectedCount）会误触发 meeting.complete。
+    const currentRound = (review as any).currentRound ?? 1;
+    const terminalForRound = await this.prisma.reviewTurn.count({
+      where: { reviewId, round: currentRound, status: { in: ['completed', 'failed', 'timeout'] } },
     });
 
-    if (terminalCount >= expectedCount) {
-      this.logger.log(`All ${expectedCount} turns terminal → enqueuing meeting.complete`);
-      const jobId = `meeting.complete.${reviewId}`;
-      this.enqueue('meeting.complete', { reviewId, expectedCount, terminalCount }, jobId);
+    if (terminalForRound >= expectedCount) {
+      this.logger.log(`All ${expectedCount} round-${currentRound} turns terminal → enqueuing meeting.complete (r${currentRound})`);
+      // job id 带 round，避免 round-1 的 meeting.complete 已处理后 processedIds 命中导致 round-2 不触发
+      const jobId = `meeting.complete.${reviewId}.r${currentRound}`;
+      this.enqueue('meeting.complete', { reviewId, round: currentRound, expectedCount, terminalCount: terminalForRound }, jobId);
     }
   }
 
   // ── meeting.complete ──
 
   private async executeMeetingComplete(payload: any): Promise<void> {
-    const { reviewId } = payload;
+    const { reviewId, round: payloadRound } = payload;
 
     // DB idempotency: re-check review status
     const review = await this.prisma.review.findUnique({ where: { id: reviewId } });
@@ -454,33 +463,35 @@ export class QueueService implements OnModuleDestroy {
     const selection = review.roleSelection as any;
     const expectedCount = selection?.roles?.length ?? 0;
 
-    const completedCount = await this.prisma.reviewTurn.count({
-      where: { reviewId, status: 'completed' },
+    // 9.5b 多轮：按当前轮次 scope 完成判定（与 checkMeetingComplete 一致），防跨轮累加误触发。
+    const currentRound = payloadRound ?? (review as any).currentRound ?? 1;
+    const completedForRound = await this.prisma.reviewTurn.count({
+      where: { reviewId, round: currentRound, status: 'completed' },
     });
-    const failedCount = await this.prisma.reviewTurn.count({
-      where: { reviewId, status: { in: ['failed', 'timeout'] } },
+    const failedForRound = await this.prisma.reviewTurn.count({
+      where: { reviewId, round: currentRound, status: { in: ['failed', 'timeout'] } },
     });
-    const terminalCount = completedCount + failedCount;
+    const terminalForRound = completedForRound + failedForRound;
 
-    if (terminalCount < expectedCount) {
-      this.logger.log(`Idempotent skip: ${terminalCount}/${expectedCount} terminal, not ready yet`);
+    if (terminalForRound < expectedCount) {
+      this.logger.log(`Idempotent skip: round-${currentRound} ${terminalForRound}/${expectedCount} terminal, not ready yet`);
       return;
     }
 
-    // → 编排脊柱（single-round converge）。若已接线则委派 orchestrator 完成决策与落库。
+    // → 编排脊柱（多轮 converge / continue_debate / force_stop）。若已接线则委派 orchestrator 完成决策与落库。
     if (this.completionHook) {
-      this.logger.log(`All ${terminalCount} turns terminal → delegating to orchestrator.handleTurnsComplete (review ${reviewId.substring(0, 8)})`);
+      this.logger.log(`All ${terminalForRound} round-${currentRound} turns terminal → delegating to orchestrator.handleTurnsComplete (review ${reviewId.substring(0, 8)})`);
       await this.completionHook(reviewId);
       return;
     }
 
     // 兜底 legacy（未接线时）：按终态比例定终态
-    const finalStatus = completedCount > 0 ? 'completed' : 'failed';
+    const finalStatus = completedForRound > 0 ? 'completed' : 'failed';
     await this.prisma.review.update({
       where: { id: reviewId },
       data: { status: finalStatus },
     });
-    this.logger.log(`Review ${reviewId.substring(0, 8)} → ${finalStatus} (legacy, ${completedCount}/${expectedCount} completed, ${failedCount} failed)`);
+    this.logger.log(`Review ${reviewId.substring(0, 8)} → ${finalStatus} (legacy, ${completedForRound}/${expectedCount} completed, ${failedForRound} failed)`);
   }
 
   onModuleDestroy() {

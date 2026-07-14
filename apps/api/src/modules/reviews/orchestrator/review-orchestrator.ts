@@ -28,14 +28,16 @@ import { MockModerator, HardGates, DEFAULT_HARD_GATES, toDecisionRef } from './m
 import { resolveHardGates } from './hard-gates';
 
 /**
- * P2-3：summarized 节点的下一节点由 ModeratorDecision.decisionType 动态决定（条件路由，非硬编码）。
- * 9.5a 只返回 completed / aborted / summarized 三态：
+ * P2-3（9.5a）+ 9.5b 须知悉项 1 & 3：summarized 节点的下一节点由
+ * ModeratorDecision.decisionType 动态决定（条件路由，非硬编码）：
  *   - converge / terminate_proposal → completed（收敛/终止提议通过）
  *   - force_stop                 → aborted（硬闸/收敛 override 强停）
- *   - advance_round / continue_debate → summarized（9.5a 不派发 round-2，保持 summarized；
- *                                       continue_debate → running(r2) 分支留空，9.5b 填）
+ *   - advance_round / continue_debate → running（round-2 入口；9.5b 接管 round-2 派发）
+ *     · advance_round：minRounds 未达标（9.5a P2-2）→ 继续到下一轮
+ *     · continue_debate：存在 high-risk 冲突 → 派发 round-2 debate turns
+ *     两者在 9.5b 均触发 currentRound++ + round-N 派发（多轮循环）。
  */
-type NextNode = 'completed' | 'aborted' | 'summarized';
+type NextNode = 'completed' | 'aborted' | 'running';
 function routeAfterSummarized(type: ModeratorDecisionType): NextNode {
   switch (type) {
     case 'converge':
@@ -45,9 +47,9 @@ function routeAfterSummarized(type: ModeratorDecisionType): NextNode {
       return 'aborted';
     case 'advance_round':
     case 'continue_debate':
-      return 'summarized';
+      return 'running';
     default:
-      return 'summarized';
+      return 'running';
   }
 }
 
@@ -210,10 +212,46 @@ export class ReviewOrchestrator implements OnModuleInit {
       return;
     }
 
-    if (next === 'summarized') {
-      // advance_round / continue_debate：9.5a 不派发 round-2，保持 summarized（不进 completed）。
-      // 例如 P2-2 的 minRounds 未达标，或存在待深挖冲突时，脊柱停在此态等待 9.5b 接管。
-      this.logger.log(`Spine: review ${rid} decision=${decision.decisionType} → stay summarized (round-2 dispatch is 9.5b scope)`);
+    if (next === 'running') {
+      // 9.5b 须知悉项 1 & 3：advance_round / continue_debate → round-2 (N) 派发（多轮循环）。
+      const nextRound = state.round + 1;
+
+      // 须知悉项 2：每轮派发前重校验 max_rounds（防御性双闸；Moderator 已在 round>=maxRounds 返回 force_stop）。
+      if (nextRound > gates.maxRounds) {
+        const abortedState: ReviewState = {
+          ...summarizedState,
+          status: 'aborted',
+          currentNodeId: 'aborted',
+          updatedAt: new Date().toISOString(),
+        };
+        await this.checkpoint(reviewId, 'aborted', abortedState);
+        await this.persistState(reviewId, abortedState);
+        this.logger.log(
+          `Spine: review ${rid} nextRound ${nextRound} > maxRounds ${gates.maxRounds} → force_stop → aborted`,
+        );
+        return;
+      }
+
+      // 进入 running(round-N)：推进 currentRound + 派发 round-N debate turns（包装 QueueService）。
+      const runningState: ReviewState = {
+        ...summarizedState,
+        status: 'running',
+        currentNodeId: 'running',
+        round: nextRound,
+        updatedAt: new Date().toISOString(),
+      };
+      await this.checkpoint(reviewId, 'running', runningState);
+      await this.persistState(reviewId, runningState); // 写 currentRound=nextRound, status=running
+
+      // 派发 round-N turns（review.start 内部按角色派发，round=nextRound 贯通到 turn 写入 + 幂等键）。
+      this.queue.enqueue('review.start', {
+        reviewId: state.reviewId,
+        sessionId: `session-${state.reviewId}-r${nextRound}`,
+        round: nextRound,
+      });
+      this.logger.log(
+        `Spine: review ${rid} decision=${decision.decisionType} → running(round-${nextRound}) dispatched (multi-round)`,
+      );
       return;
     }
 

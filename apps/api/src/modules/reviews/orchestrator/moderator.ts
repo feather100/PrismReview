@@ -69,11 +69,17 @@ export class MockModerator implements Moderator {
     const reviewersSpoke = Object.keys(usage.turnsByReviewer).length > 0;
     const convergenceOk = reviewersSpoke;
 
+    // 9.5b round-2 mock debater（Contract §10）：本轮 high-risk 冲突检测。
+    // P1 mock 确定性启发式：本轮 ≥2 条 high-risk opinion → 视为存在未决 high-risk 冲突，
+    // 需要进入 round-2 debate 深挖（"存在 riskLevel=high 的冲突意见 → continue_debate"）。
+    const conflictCount = await this.detectConflict(state.reviewId, round);
+    const conflict = conflictCount >= 2;
+
     const passed = maxRoundsOk && maxTurnsPerReviewerOk && maxTokensOk && maxCostOk && convergenceOk;
 
-    // 单轮脊柱：round-1 summarized 后只做 converge → completed（不触发辩论 / round-2）
+    // 多轮脊柱：默认 converge → completed；冲突则 continue_debate → round-2；到顶则 force_stop。
     let decisionType: ModeratorDecisionType = 'converge';
-    let reasoning = `round-1 summarized: reviewers spoke, single-round spine → converge to completed`;
+    let reasoning = `round-${round} summarized: reviewers spoke, no conflict → converge to completed`;
 
     // 硬闸强停覆盖（达上限 / 越界 → aborted）
     if (!maxRoundsOk || !maxTokensOk || !maxCostOk) {
@@ -87,10 +93,17 @@ export class MockModerator implements Moderator {
       reasoning = `convergence not reached (no reviewer spoke) → force_stop (aborted)`;
     } else if (round < gates.minRounds) {
       // P2-2：minRounds 强制校验。未达下限即使想收敛也必须继续，
-      // 禁止 converge → 返回 advance_round。9.5a 不实现 round-2 派发，
-      // 故脊柱在 handleTurnsComplete 中保持 summarized（9.5b 接管派发 round-2）。
+      // 禁止 converge → 返回 advance_round（9.5b 同样进入 round-2 派发）。
       decisionType = 'advance_round';
-      reasoning = `round=${round} < minRounds=${gates.minRounds}: minRounds not met → must continue (advance_round; round-2 dispatch in 9.5b scope)`;
+      reasoning = `round=${round} < minRounds=${gates.minRounds}: minRounds not met → must continue (advance_round)`;
+    } else if (round >= gates.maxRounds) {
+      // 9.5b max_rounds 兜底：到顶仍冲突/未决 → 强停（不无限辩论；Contract §5.3）
+      decisionType = 'force_stop';
+      reasoning = `round=${round} >= maxRounds=${gates.maxRounds}: max rounds reached → force_stop (aborted)`;
+    } else if (conflict) {
+      // 9.5b round-2 mock debater：存在 high-risk 冲突 → 继续辩论（派发 round-2 debate turns）
+      decisionType = 'continue_debate';
+      reasoning = `round-${round}: ${conflictCount} high-risk opinions → conflict detected → continue_debate (round-${round + 1} dispatch)`;
     }
 
     const ruleCheckResult: RuleCheckResult = {
@@ -126,6 +139,25 @@ export class MockModerator implements Moderator {
       ruleCheckResult,
       createdAt: record.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * 9.5b 冲突检测（P1 mock 确定性）：读 DB 中本轮（round）所有 turn 的 opinion，
+   * 统计 high-risk 条数，作为"未决 high-risk 冲突"的代理信号。
+   * 返回 high-risk opinion 数量（≥2 视为冲突）。
+   */
+  private async detectConflict(reviewId: string, round: number): Promise<number> {
+    const turns = await this.prisma.reviewTurn.findMany({
+      where: { reviewId, round },
+      select: { id: true },
+    });
+    if (turns.length < 2) return 0;
+    const turnIds = turns.map((t) => t.id);
+    const opinions = await this.prisma.reviewOpinion.findMany({
+      where: { turnId: { in: turnIds } },
+      select: { riskLevel: true },
+    });
+    return opinions.filter((o) => (o.riskLevel || '').toLowerCase() === 'high').length;
   }
 }
 
