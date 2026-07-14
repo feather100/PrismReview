@@ -8,6 +8,9 @@ import { CreateReviewDto } from './dto/create-review.dto';
 import { ListReviewsQuery } from './dto/list-reviews-query.dto';
 import { ReviewResponseDto, DiagnosisResponseDto } from './dto/review-response.dto';
 import { ReportResponseDto } from './dto/report-response.dto';
+import { ReportingService } from './reporting/reporting.service';
+import { ScoringService } from './scoring/scoring.service';
+import { WorkflowRegistry } from '../workflow/workflow.registry';
 
 // P1 status flow (Contract §1.2). Enum renamed per §7.6:
 //   draft/diagnosing→created, ready→diagnosed, summarizing→summarized; aborted added.
@@ -39,12 +42,29 @@ const MOCK_ROLES = [
 @Injectable()
 export class ReviewsService {
   private readonly logger = new Logger(ReviewsService.name);
+
+  // 向后兼容：Nest DI 注入真实 ReportingService；手动 new（旧测试）走懒初始化
+  private _reportingService?: ReportingService;
+  private get reportingService(): ReportingService {
+    if (!this._reportingService) {
+      const wf = new WorkflowRegistry();
+      const scoring = new ScoringService(this.prisma, wf);
+      this._reportingService = new ReportingService(this.prisma, scoring, wf);
+    }
+    return this._reportingService;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
     private readonly orchestrator: ReviewOrchestrator,
     private readonly toolRegistry: ToolRegistryImpl,
-  ) {}
+    injectedReportingService?: ReportingService,
+  ) {
+    if (injectedReportingService) {
+      this._reportingService = injectedReportingService;
+    }
+  }
 
   async createReview(dto: CreateReviewDto, user: any): Promise<ReviewResponseDto> {
     const review = await this.prisma.review.create({
@@ -447,269 +467,24 @@ export class ReviewsService {
     return { status: 'completed' };
   }
 
-  // ── Report (Mock) ──
+  // ── Report (P5：委托 ReportingService) ──
 
+  /**
+   * @deprecated 自 Sprint 5.3 起委托 ReportingService.generateReport()（30 天 back-compat 包装）。
+   * 报告生成 / 评分 / 导出逻辑已抽取到 ReportingService。
+   */
   async getReport(reviewId: string, user: any): Promise<ReportResponseDto> {
-    const review = await this.assertReview(reviewId, user.tenantId, ['running', 'interrupted', 'summarized', 'completed', 'failed']);
-
-    // Check if real opinions exist in DB (written by agent turn runner)
-    const dbOpinions = await this.prisma.reviewOpinion.findMany({
-      where: { reviewId },
-      include: { turn: { select: { turnIndex: true } } },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    if (dbOpinions.length > 0) {
-      return this.buildReportFromDb(review, dbOpinions);
-    }
-
-    // Fallback: build mock report from roleSelection
-    const roleIds = (review.roleSelection as any)?.roles?.map((r: any) => r.roleId) ?? [];
-    const roles = await this.prisma.agentRole.findMany({
-      where: { id: { in: roleIds } },
-      select: { id: true, code: true, name: true },
-    });
-
-    // Build mock opinions per role
-    const MOCK_OPINIONS: Record<string, { dimension: string; riskLevel: string; issue: string; recommendation: string; confidenceScore: number }> = {
-      CTO: { dimension: '架构合理性', riskLevel: 'high', issue: '核心链路未设置熔断降级机制，存在单点故障风险', recommendation: '采用微服务架构拆分关键模块，设置超时和熔断', confidenceScore: 78 },
-      CFO: { dimension: '投入产出分析', riskLevel: 'medium', issue: '初期投入较高，长期ROI可期但需分阶段验证', recommendation: '制定分阶段投入计划，首阶段聚焦核心功能验证', confidenceScore: 72 },
-      PMO: { dimension: '交付风险', riskLevel: 'medium', issue: '排期紧张，关键路径存在外部依赖风险', recommendation: '增加20%排期缓冲，明确外部依赖时间表', confidenceScore: 65 },
-      Compliance: { dimension: '数据安全与合规', riskLevel: 'high', issue: '方案涉及用户数据出境，需完成隐私影响评估', recommendation: '完成数据分类分级，确保数据加密传输和存储', confidenceScore: 80 },
-      UserAdvocate: { dimension: '用户体验', riskLevel: 'low', issue: '学习成本偏高，缺乏新手引导', recommendation: '补充新手引导流程，优化关键页面加载性能', confidenceScore: 70 },
-    };
-
-    const opinions = roles.map(r => {
-      const m = MOCK_OPINIONS[r.code] || MOCK_OPINIONS.CTO;
-      return { dimension: m.dimension, agentCode: r.code, agentName: r.name, riskLevel: m.riskLevel, issue: m.issue, recommendation: m.recommendation, confidenceScore: m.confidenceScore };
-    });
-
-    const risks = opinions.filter(o => o.riskLevel === 'high' || o.riskLevel === 'medium').map(o => ({
-      title: o.issue.substring(0, 40),
-      riskLevel: o.riskLevel,
-      sourceAgent: o.agentCode,
-      dimension: o.dimension,
-      description: o.issue,
-    }));
-
-    const actionItems = opinions.map(o => ({
-      title: o.recommendation,
-      sourceAgent: o.agentCode,
-      priority: o.riskLevel === 'high' ? 'p0' : o.riskLevel === 'medium' ? 'p1' : 'p2',
-      status: 'open',
-    }));
-
-    const lowConfidenceItems = opinions.filter(o => o.confidenceScore < 65).map(o => ({
-      agentCode: o.agentCode,
-      agentName: o.agentName,
-      issue: o.issue,
-      confidenceScore: o.confidenceScore,
-    }));
-
-    const verdict = opinions.some(o => o.riskLevel === 'high') ? 'conditionally_approved' : 'approved';
-
-    const report: ReportResponseDto = {
-      reviewId: review.id,
-      title: review.title,
-      objective: review.objective,
-      status: review.status,
-      mode: review.mode,
-      source: 'mock_fallback',
-      opinionCount: opinions.length,
-      generatedFromTurns: false,
-      // P4 (Sprint 5.2 T19)：叙事来源取最近一次 converge 的 ModeratorDecision.reasoning
-      narrative: await this.loadNarrative(review.id),
-      providerSummary: { totalTurns: 0, bySource: { mock: opinions.length }, fallbackCount: 0, failedCount: 0, models: ['mock'], hasRealProvider: false },
-      verdict,
-      executiveSummary: `方案 "${review.title}" 经过 ${roles.length} 个角色的评审，共识别 ${risks.length} 项风险。${lowConfidenceItems.length > 0 ? `其中 ${lowConfidenceItems.length} 条意见置信度较低，需人工确认。` : ''}`,
-      metrics: {
-        p0RiskCount: risks.filter(r => r.riskLevel === 'high').length,
-        totalRiskCount: risks.length,
-        adoptionRate: Math.round(70 + Math.random() * 20),
-        durationMinutes: roles.length * 3,
-        totalRoles: roles.length,
-      },
-      risks,
-      opinions,
-      actionItems,
-      lowConfidenceItems,
-    };
-
-    return report;
+    return this.reportingService.generateReport(reviewId, user);
   }
 
   /**
-   * Build report from DB opinions (written by agent turn runner).
+   * @deprecated 自 Sprint 5.3 起委托 ReportingService.exportMarkdown()（30 天 back-compat 包装）。
    */
-  private async buildReportFromDb(review: any, dbOpinions: any[]): Promise<ReportResponseDto> {
-    const turnIds = [...new Set(dbOpinions.map(o => o.turnId))];
-    const turns = await this.prisma.reviewTurn.findMany({
-      where: { id: { in: turnIds } },
-      select: { id: true, roleVersionId: true },
-    });
-    const versionIds = [...new Set(turns.map(t => t.roleVersionId))];
-    const roles = await this.prisma.agentRole.findMany({
-      where: { activeVersionId: { in: versionIds } },
-      select: { code: true, name: true, activeVersionId: true },
-    });
-    const versionToRole = new Map(roles.map(r => [r.activeVersionId, { code: r.code, name: r.name }]));
-    const turnToRole = new Map(turns.map(t => [t.id, versionToRole.get(t.roleVersionId) ?? { code: 'unknown', name: 'Unknown' }]));
-
-    const opinions = dbOpinions.map(o => {
-      const role = turnToRole.get(o.turnId) ?? { code: 'unknown', name: 'Unknown' };
-      return { dimension: o.dimension, agentCode: role.code, agentName: role.name, riskLevel: o.riskLevel, issue: o.issue, recommendation: o.recommendation, confidenceScore: o.confidenceScore };
-    });
-
-    const risks = opinions.filter(o => o.riskLevel === 'high' || o.riskLevel === 'medium').map(o => ({
-      title: o.issue.substring(0, 40), riskLevel: o.riskLevel, sourceAgent: o.agentCode, dimension: o.dimension, description: o.issue,
-    }));
-    const actionItems = opinions.map(o => ({
-      title: o.recommendation, sourceAgent: o.agentCode, priority: o.riskLevel === 'high' ? 'p0' : o.riskLevel === 'medium' ? 'p1' : 'p2', status: 'open',
-    }));
-    const lowConfidenceItems = opinions.filter(o => o.confidenceScore < 65).map(o => ({
-      agentCode: o.agentCode, agentName: o.agentName, issue: o.issue, confidenceScore: o.confidenceScore,
-    }));
-    const verdict = opinions.some(o => o.riskLevel === 'high') ? 'conditionally_approved' : 'approved';
-
-    return {
-      reviewId: review.id, title: review.title, objective: review.objective, status: review.status, mode: review.mode,
-      source: 'db_opinions',
-      opinionCount: opinions.length,
-      generatedFromTurns: true,
-      // P4 (Sprint 5.2 T19)：叙事来源取最近一次 converge 的 ModeratorDecision.reasoning
-      narrative: await this.loadNarrative(review.id),
-      providerSummary: this.buildProviderSummary(dbOpinions),
-      verdict,
-      executiveSummary: `方案 "${review.title}" 经过 ${opinions.length} 个角色的评审，共识别 ${risks.length} 项风险。${lowConfidenceItems.length > 0 ? `其中 ${lowConfidenceItems.length} 条意见置信度较低，需人工确认。` : ''}`,
-      metrics: { p0RiskCount: risks.filter(r => r.riskLevel === 'high').length, totalRiskCount: risks.length, adoptionRate: Math.round(70 + Math.random() * 20), durationMinutes: opinions.length * 3, totalRoles: opinions.length },
-      risks, opinions, actionItems, lowConfidenceItems,
-    };
-  }
-
-  private buildProviderSummary(dbOpinions: any[]): any {
-    const bySource: Record<string, number> = {};
-    const models: string[] = [];
-    let fallbackCount = 0;
-    let failedCount = 0;
-
-    for (const o of dbOpinions) {
-      let ref: any = null;
-      try {
-        if (o.modelOutputRef) ref = JSON.parse(o.modelOutputRef);
-      } catch (e: any) {
-        this.logger.warn(`modelOutputRef parse error: ${e.message}`);
-      }
-      const source = ref?.providerSource || 'mock';
-      const isFallback = ref?.fallback === true;
-      const isFailed = source === 'failed';
-
-      bySource[source] = (bySource[source] || 0) + 1;
-      if (isFallback) fallbackCount++;
-      if (isFailed) failedCount++;
-      if (ref?.modelName && !models.includes(ref.modelName)) models.push(ref.modelName);
-    }
-
-    const providerSummary = {
-      totalTurns: dbOpinions.length,
-      bySource,
-      fallbackCount,
-      failedCount,
-      models,
-      hasRealProvider: Object.keys(bySource).some(s => s === 'lmstudio' || s === 'openai_compatible'),
-    };
-    return providerSummary;
-  }
-
   async exportMarkdown(reviewId: string, user: any): Promise<string> {
-    const review = await this.assertReview(reviewId, user.tenantId, ['completed']);
-    const report = await this.getReport(reviewId, user);
-
-    const esc = (s: string) => (s || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
-    const verdictMap: Record<string, string> = { approved: '通过', conditionally_approved: '有条件通过', rejected: '不通过' };
-    const verdictLabel = verdictMap[report.verdict] || '未给出';
-    const generatedAt = new Date().toISOString();
-    const ps = report.providerSummary;
-
-    let md = '';
-    md += '# PrismReview 评审报告\n\n';
-    md += '**评审标题**: ' + esc(report.title) + '\n';
-    md += '**评审目标**: ' + esc(report.objective) + '\n';
-    md += '**Review ID**: ' + reviewId + '\n';
-    md += '**状态**: ' + esc(report.status) + '\n';
-    md += '**模式**: ' + esc(report.mode) + '\n';
-    md += '**生成时间**: ' + generatedAt + '\n';
-    md += '**数据来源**: ' + esc(report.source) + '\n';
-    md += '**意见数量**: ' + report.opinionCount + '\n';
-    md += '**真实生成**: ' + (report.generatedFromTurns ? '是' : '否（Mock 模拟）') + '\n\n';
-
-    md += '---\n\n## 评审结论\n\n**结论**: ' + verdictLabel + '\n\n';
-
-    if (ps) {
-      md += '## 生成来源摘要\n\n';
-      md += '- 总轮次: ' + ps.totalTurns + '\n';
-      md += '- Mock 生成: ' + (ps.bySource?.mock || 0) + '\n';
-      md += '- LM Studio: ' + (ps.bySource?.lmstudio || 0) + '\n';
-      md += '- 外部模型: ' + (ps.bySource?.openai_compatible || 0) + '\n';
-      md += '- 回退 Mock: ' + ps.fallbackCount + '\n';
-      md += '- 失败: ' + ps.failedCount + '\n';
-      md += '- 使用模型: ' + (ps.models?.join(', ') || 'N/A') + '\n\n';
-    }
-
-    md += '---\n\n## 执行摘要\n\n' + esc(report.executiveSummary) + '\n\n';
-    md += '---\n\n## 评审指标\n\n';
-    md += '- P0 风险数: ' + report.metrics.p0RiskCount + '\n';
-    md += '- 风险总数: ' + report.metrics.totalRiskCount + '\n';
-    md += '- 建议采纳率: ' + report.metrics.adoptionRate + '%\n';
-    md += '- 评审耗时: ' + report.metrics.durationMinutes + ' 分钟\n';
-    md += '- 参审角色: ' + report.metrics.totalRoles + '\n\n';
-
-    if (report.risks.length > 0) {
-      md += '---\n\n## 风险清单\n\n| # | 风险等级 | 来源 | 维度 | 描述 |\n|---|---|---|---|---|\n';
-      report.risks.forEach((r, i) => md += '| ' + (i + 1) + ' | ' + esc(r.riskLevel) + ' | ' + esc(r.sourceAgent) + ' | ' + esc(r.dimension) + ' | ' + esc(r.description) + ' |\n');
-      md += '\n';
-    }
-
-    if (report.opinions.length > 0) {
-      md += '---\n\n## 各角色评审意见\n\n';
-      for (const o of report.opinions) {
-        md += '### ' + esc(o.agentCode) + ' (' + esc(o.agentName) + ')\n';
-        md += '- 维度: ' + esc(o.dimension) + '\n';
-        md += '- 风险等级: ' + esc(o.riskLevel) + '\n';
-        md += '- 核心问题: ' + esc(o.issue) + '\n';
-        md += '- 改进建议: ' + esc(o.recommendation) + '\n';
-        md += '- 置信度: ' + o.confidenceScore + '%\n\n';
-      }
-    }
-
-    if (report.actionItems.length > 0) {
-      md += '---\n\n## 改进行动项\n\n| # | 优先级 | 来源 | 标题 |\n|---|---|---|---|\n';
-      report.actionItems.forEach((a, i) => md += '| ' + (i + 1) + ' | ' + esc(a.priority) + ' | ' + esc(a.sourceAgent) + ' | ' + esc(a.title) + ' |\n');
-      md += '\n';
-    }
-
-    if (report.lowConfidenceItems.length > 0) {
-      md += '---\n\n## 低置信度意见（需人工确认）\n\n| # | 角色 | 意见 | 置信度 |\n|---|---|---|---|\n';
-      report.lowConfidenceItems.forEach((l, i) => md += '| ' + (i + 1) + ' | ' + esc(l.agentName) + ' | ' + esc(l.issue) + ' | ' + l.confidenceScore + '% |\n');
-      md += '\n';
-    }
-
-    md += '---\n\n> 本报告由 PrismReview 自动生成\n';
-    return md;
+    return this.reportingService.exportMarkdown(reviewId, user);
   }
 
   // ── Helpers ──
-
-  /**
-   * P4 (Sprint 5.2 T19)：叙事来源 —— 取最近一次 converge 的 ModeratorDecision.reasoning。
-   * 无 converge 决策（如 force_stop/aborted）时返回 null（报告降级为 mock 叙事）。
-   */
-  private async loadNarrative(reviewId: string): Promise<string | undefined> {
-    const dec = await this.prisma.moderatorDecision.findFirst({
-      where: { reviewId, decisionType: 'converge' },
-      orderBy: { round: 'desc' },
-    });
-    return dec?.reasoning ?? undefined;
-  }
 
   private async assertReview(reviewId: string, tenantId: string, allowedStatuses: string[]) {
     const review = await this.prisma.review.findFirst({

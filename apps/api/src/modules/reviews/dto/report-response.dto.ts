@@ -32,6 +32,23 @@ export class ReportLowConfidenceItem {
   @Expose() confidenceScore: number;
 }
 
+export class ReportScoringDimension {
+  @Expose() dimension: string;
+  @Expose() weight: number;
+  @Expose() weightedScore: number;
+}
+
+export class ReportScoringDto {
+  @Expose() workflowId: string;
+  @Expose() workflowName: string;
+  @Expose() overallScore: number;
+  @Expose() dimensionScores: ReportScoringDimension[];
+  @Expose() verdict: string; // 评分驱动 verdict（覆盖既有简单判定）
+  @Expose() adoptedRate: number;
+  @Expose() coverage: { expected: string[]; covered: string[]; missing: string[] };
+  @Expose() thresholds: { approved: number; conditionallyApproved: number };
+}
+
 export class ReportResponseDto {
   @Expose() reviewId: string;
   @Expose() title: string;
@@ -43,6 +60,7 @@ export class ReportResponseDto {
   @Expose() opinionCount: number;
   @Expose() generatedFromTurns: boolean;
   @Expose() narrative?: string; // P4 (Sprint 5.2 T19)：来自 converge ModeratorDecision.reasoning 的叙事
+  @Expose() scoring?: ReportScoringDto; // P5 (Sprint 5.3)：评分驱动结果
 
   @Expose() providerSummary?: {
     totalTurns: number;

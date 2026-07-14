@@ -180,6 +180,9 @@ model Review {
   toolCallRequests ToolCallRequest[]
   // --- Sprint 4.0 additive: provider quality evaluation reports (reverse relation) ---
   qualityReports    QualityReport[]
+  // --- Sprint 5.3 P5 additive: ScoringResult 审计快照（加权评分权重 + verdict 阈值，可审计）---
+  // nullable：旧 Review 无快照 → 兼容；评分时由 ScoringService 写入。不新增表（纯 JSON 列）。
+  scoringConfig   Json?   @map("scoring_config")
 
   @@index([tenantId, createdBy, status])
   @@map("reviews")

@@ -14,6 +14,9 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PromptModule } from './modules/prompt/prompt.module';
 import { MemoryModule } from './modules/memory/memory.module';
 import { ToolModule } from './modules/tool/tool.module';
+import { WorkflowModule } from './modules/workflow/workflow.module';
+import { ScoringModule } from './modules/reviews/scoring/scoring.module';
+import { ReportingModule } from './modules/reviews/reporting/reporting.module';
 
 @Module({
   imports: [
@@ -27,6 +30,9 @@ import { ToolModule } from './modules/tool/tool.module';
     PromptModule,
     MemoryModule,
     ToolModule,
+    WorkflowModule,
+    ScoringModule,
+    ReportingModule,
   ],
   providers: [
     {

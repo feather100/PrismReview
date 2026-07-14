@@ -10,14 +10,14 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { DEFAULT_HARD_GATES, HardGates } from './moderator';
 
 /** 从 MODEL_PILOT_MAX_ROLES 解析 max_turns_per_reviewer（默认 3）。 */
-export function resolveHardGates(): HardGates {
+export function resolveHardGates(overrides?: Partial<HardGates>): HardGates {
   const raw = process.env.MODEL_PILOT_MAX_ROLES;
   let maxTurns = DEFAULT_HARD_GATES.maxTurnsPerReviewer;
   if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
     const parsed = parseInt(String(raw), 10);
     maxTurns = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HARD_GATES.maxTurnsPerReviewer;
   }
-  return { ...DEFAULT_HARD_GATES, maxTurnsPerReviewer: maxTurns };
+  return { ...DEFAULT_HARD_GATES, maxTurnsPerReviewer: maxTurns, ...(overrides ?? {}) };
 }
 
 export interface DispatchGateInput {

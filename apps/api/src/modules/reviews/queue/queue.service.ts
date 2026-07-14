@@ -193,6 +193,15 @@ export class QueueService implements OnModuleDestroy {
       // 9.5b 多轮：job id 带 round，避免 round-1 已处理后 processedIds 命中导致 round-2 不派发
       const jobId = `agent.turn.execute.${reviewId}.r${round}.${turnIndex}`;
 
+      // P5 (Sprint 5.3 §6.3)：phase 由 workflow.turnPhasePattern[round-1] 决定；
+      // 缺省（无 pattern / 越界）回退到既有启发式（round>=2 → debate）。
+      const phasePattern: string[] | undefined = Array.isArray((payload as any).turnPhasePattern)
+        ? (payload as any).turnPhasePattern
+        : undefined;
+      const phaseFromPattern = phasePattern && phasePattern[round - 1]
+        ? phasePattern[round - 1]
+        : (round >= 2 ? 'debate' : 'round_robin');
+
       this.enqueue('agent.turn.execute', {
         reviewId,
         turnIndex,
@@ -201,8 +210,8 @@ export class QueueService implements OnModuleDestroy {
         roleVersionId: dbRole.activeVersionId,
         objective: review.objective,
         round, // P2-1：贯通到 turn 执行，供 reviewTurn.round 写入 + 语义元组幂等
-        // 9.5b：round>=2 的辩论轮标记为 debate phase（mock debater，Contract §10）
-        phase: round >= 2 ? 'debate' : 'round_robin',
+        // 9.5b：round>=2 的辩论轮标记为 debate phase（mock debater，Contract §10）；P5 由 workflow pattern 覆盖
+        phase: phaseFromPattern === 'debate' ? 'debate' : 'round_robin',
       }, jobId);
     }
   }

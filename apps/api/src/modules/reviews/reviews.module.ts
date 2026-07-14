@@ -13,11 +13,13 @@ import { PromptModule } from '../prompt/prompt.module';
 import { MemoryModule } from '../memory/memory.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { ToolModule } from '../tool/tool.module';
+import { WorkflowModule } from '../workflow/workflow.module';
+import { ReportingModule } from './reporting/reporting.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PromptServiceImpl } from '../prompt/prompt.service';
 
 @Module({
-  imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule],
+  imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule, WorkflowModule, ReportingModule],
   controllers: [ReviewsController, QualityController],
   providers: [
     ReviewsService,

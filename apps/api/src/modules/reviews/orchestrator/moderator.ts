@@ -7,6 +7,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ReviewState, ModeratorDecisionType, ModeratorDecisionRef } from './graph-runtime';
+import type { WorkflowConfig } from '../../workflow/workflow.registry';
 
 export interface RuleCheckResult {
   readonly maxRoundsOk: boolean;
@@ -51,7 +52,7 @@ export const DEFAULT_HARD_GATES: HardGates = {
 };
 
 export interface Moderator {
-  decide(state: Readonly<ReviewState>, gates: HardGates): Promise<ModeratorDecision>;
+  decide(state: Readonly<ReviewState>, gates: HardGates, config?: WorkflowConfig): Promise<ModeratorDecision>;
 }
 
 /** DI token：env-gated 构造的 Moderator 实现（MockModerator / LlmModerator）。 */
@@ -95,7 +96,7 @@ export class MockModerator implements Moderator {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async decide(state: Readonly<ReviewState>, gates: HardGates): Promise<ModeratorDecision> {
+  async decide(state: Readonly<ReviewState>, gates: HardGates, config?: WorkflowConfig): Promise<ModeratorDecision> {
     const round = state.round;
     const usage = state.usage;
 
@@ -139,10 +140,14 @@ export class MockModerator implements Moderator {
       // 9.5b max_rounds 兜底：到顶仍冲突/未决 → 强停（不无限辩论；Contract §5.3）
       decisionType = 'force_stop';
       reasoning = `round=${round} >= maxRounds=${gates.maxRounds}: max rounds reached → force_stop (aborted)`;
-    } else if (conflict) {
-      // 9.5b round-2 mock debater：存在 high-risk 冲突 → 继续辩论（派发 round-2 debate turns）
+    } else if (conflict && (!config || round >= config.debateAfterRound)) {
+      // 9.5b round-2 mock debater：存在 high-risk 冲突且已达 debateAfterRound → 继续辩论
+      // 向后兼容：未传 config（旧测试）时 !config=true → 保持原有 conflict→continue_debate 行为
       decisionType = 'continue_debate';
       reasoning = `round-${round}: ${conflictCount} high-risk opinions → conflict detected → continue_debate (round-${round + 1} dispatch)`;
+    } else if (conflict) {
+      // 冲突存在但未达 debateAfterRound：本轮不进 debate（留待后续轮次），按默认 converge/advance 处理
+      reasoning = `round-${round}: conflict detected but round < debateAfterRound=${config?.debateAfterRound ?? 'N/A'} → debate deferred`;
     }
 
     // 审计落库（§5.4）

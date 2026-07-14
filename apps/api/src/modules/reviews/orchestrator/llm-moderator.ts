@@ -24,6 +24,8 @@ import {
   RuleCheckResult,
   computeRuleCheck,
 } from './moderator';
+import type { WorkflowConfig } from '../../workflow/workflow.registry';
+import type { ToolType } from '../../tool/tool.registry';
 import { ModelAdapter, stripMarkdown } from '../provider/model-adapter';
 import { createProviderAdapter } from '../provider/provider-factory';
 import type { PromptServiceImpl } from '../../prompt/prompt.service';
@@ -60,7 +62,7 @@ export class LlmModerator implements Moderator {
    * 失败时 fail-closed 回退 MockModerator.decide()（Contract §4.3）。
    * 硬闸代码强制：无论 LLM 返回什么，越界 → force_stop（LLM 不可覆盖）。
    */
-  async decide(state: Readonly<ReviewState>, gates: HardGates): Promise<ModeratorDecision> {
+  async decide(state: Readonly<ReviewState>, gates: HardGates, config?: WorkflowConfig): Promise<ModeratorDecision> {
     let decisionType: ModeratorDecisionType = 'converge';
     let reasoning = '';
     let proposedTools: string[] = [];
@@ -78,7 +80,8 @@ export class LlmModerator implements Moderator {
       const parsed = this.parseDecision(raw);
       decisionType = parsed.decisionType;
       reasoning = parsed.reasoning || '';
-      proposedTools = parsed.proposedTools || [];
+      // P5（§6.2）：PROPOSE_TOOLS 时按 workflow.availableTools 过滤（仅保留预设允许的工具）
+      proposedTools = this.filterToolsByWorkflow(parsed.proposedTools || [], config);
     } catch (e: any) {
       // LLM 调用失败 → fail-closed → 回退 MockModerator（Contract §4.3）
       return this.fallbackDecision(state, gates, 'adapter_failure: ' + (e?.message || String(e)));
@@ -139,7 +142,7 @@ export class LlmModerator implements Moderator {
   }
 
   /** LLM 提议本轮可用工具名（knowledge_search / code_analysis 等）。失败降级：返回空数组（不提议工具）。 */
-  async proposeTools(state: Readonly<ReviewState>): Promise<string[]> {
+  async proposeTools(state: Readonly<ReviewState>, config?: WorkflowConfig): Promise<string[]> {
     try {
       const prompt = await this.promptService.composeForModerator(state);
       const out = await this.modelAdapter.complete({
@@ -149,7 +152,9 @@ export class LlmModerator implements Moderator {
         maxTokens: 500,
       });
       const parsed = this.parseDecision(out.text);
-      return parsed.proposedTools && parsed.proposedTools.length ? parsed.proposedTools : [];
+      const tools = parsed.proposedTools && parsed.proposedTools.length ? parsed.proposedTools : [];
+      // P5（§6.2）：按 workflow.availableTools 过滤
+      return this.filterToolsByWorkflow(tools, config);
     } catch {
       return []; // mock/failure → 不提议工具
     }
@@ -217,6 +222,13 @@ export class LlmModerator implements Moderator {
 
   private fallbackNarrative(state: Readonly<ReviewState>): string {
     return `第 ${state.round} 轮评审已完成，共识/分歧如下：各评审员已提交意见，Moderator 已完成收敛判定。`;
+  }
+
+  /** P5（§6.2）：按 workflow.availableTools 过滤 LLM 提议的工具（仅保留预设允许子集）。 */
+  private filterToolsByWorkflow(tools: string[], config?: WorkflowConfig): string[] {
+    if (!config || !config.availableTools || config.availableTools.length === 0) return tools;
+    const allowed = new Set<string>(config.availableTools as string[]);
+    return tools.filter((t) => allowed.has(t));
   }
 
   /** 脱敏 LLM 原始输出（不落库密钥/不提交密钥），并截断长度。 */

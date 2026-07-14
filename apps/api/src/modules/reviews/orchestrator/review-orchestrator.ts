@@ -27,6 +27,7 @@ import {
 import { PostgresCheckpointer } from './postgres-checkpointer';
 import { MODERATOR_TOKEN, Moderator, HardGates, DEFAULT_HARD_GATES, toDecisionRef } from './moderator';
 import { resolveHardGates } from './hard-gates';
+import { WorkflowRegistry, WorkflowConfig } from '../../workflow/workflow.registry';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { MemoryServiceImpl } from '../../memory/memory.service';
 import { KnowledgeService } from '../../knowledge/knowledge.service';
@@ -71,6 +72,9 @@ export class ReviewOrchestrator implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly checkpointer: PostgresCheckpointer,
     @Inject(MODERATOR_TOKEN) private readonly moderator: Moderator,
+    // P5 (Sprint 5.3)：WorkflowRegistry 用于 resolve(review.mode) → 配置驱动各节点参数。
+    // 默认自实例化：兼容手动 `new ReviewOrchestrator(...)`（回归脚本的 4 参旧签名）；Nest DI 时注入真实实例。
+    private readonly workflowRegistry: WorkflowRegistry = new WorkflowRegistry(),
     // P3 注入位（NodeCtx 等价）：真实服务由模块装配注入；手动 `new ReviewOrchestrator(...)` 时为 undefined → 跳过 memory 聚合。
     private readonly promptService?: PromptServiceImpl,
     private readonly memoryService?: MemoryServiceImpl,
@@ -174,7 +178,9 @@ export class ReviewOrchestrator implements OnModuleInit {
     state: Readonly<ReviewState>,
     _ctx: NodeCtx,
   ): Promise<Partial<ReviewState>> {
-    const gates = resolveHardGates();
+    // P5 (Sprint 5.3)：resolve workflow 配置 → maxRounds/minRounds 覆盖硬闸默认值
+    const config = await this.resolveWorkflowConfig(state.reviewId);
+    const gates = resolveHardGates({ maxRounds: config.maxRounds, minRounds: config.minRounds });
     // 硬闸：max_rounds（代码强制）。单轮 round=1 远未触顶，但检查存在。
     if (state.round > gates.maxRounds) {
       this.logger.warn(
@@ -192,13 +198,24 @@ export class ReviewOrchestrator implements OnModuleInit {
     // 派发 round-1 并行 reviewer turns（包装 QueueService；review.start 内部按角色派发）
     // P2-1：显式携带 round（= state.round = review.currentRound），贯通到 turn 写入，
     // 避免 9.5 round-2 时全部错发 round=1 + 幂等键冲突。
+    // P5：携带 workflow.turnPhasePattern → queue 按 round 决定 phase（§6.3）。
     this.queue.enqueue('review.start', {
       reviewId: state.reviewId,
       sessionId: `session-${state.reviewId}`,
       round: state.round,
+      turnPhasePattern: config.turnPhasePattern,
     });
 
     return { status: 'running', currentNodeId: 'running', round: state.round };
+  }
+
+  /** P5：resolve workflow 配置（review.mode → preset，兼容旧值）；失败兜底 enterprise。 */
+  private async resolveWorkflowConfig(reviewId: string): Promise<WorkflowConfig> {
+    const review = await this.prisma.review.findUnique({
+      where: { id: reviewId },
+      select: { mode: true },
+    });
+    return this.workflowRegistry.resolve(review?.mode ?? 'enterprise');
   }
 
   /**
@@ -232,10 +249,12 @@ export class ReviewOrchestrator implements OnModuleInit {
     }
 
     const state = await this.buildState(reviewId);
-    const gates: HardGates = resolveHardGates();
+    // P5 (Sprint 5.3)：resolve workflow 配置 → 驱动 maxRounds / debateAfterRound / 门控
+    const config = this.workflowRegistry.resolve(review.mode);
+    const gates: HardGates = resolveHardGates({ maxRounds: config.maxRounds, minRounds: config.minRounds });
 
-    // summarized 节点：运行 MockModerator
-    const decision = await this.moderator.decide(state, gates);
+    // summarized 节点：运行 MockModerator（传入 workflow 配置做 debateAfterRound 门控）
+    const decision = await this.moderator.decide(state, gates, config);
     const summarizedState: ReviewState = {
       ...state,
       status: 'summarized',
@@ -311,10 +330,12 @@ export class ReviewOrchestrator implements OnModuleInit {
       await this.persistState(reviewId, runningState); // 写 currentRound=nextRound, status=running
 
       // 派发 round-N turns（review.start 内部按角色派发，round=nextRound 贯通到 turn 写入 + 幂等键）。
+      // P5：携带 workflow.turnPhasePattern → queue 按 round 决定 phase（§6.3）。
       this.queue.enqueue('review.start', {
         reviewId: state.reviewId,
         sessionId: `session-${state.reviewId}-r${nextRound}`,
         round: nextRound,
+        turnPhasePattern: config.turnPhasePattern,
       });
       this.logger.log(
         `Spine: review ${rid} decision=${decision.decisionType} → running(round-${nextRound}) dispatched (multi-round)`,
