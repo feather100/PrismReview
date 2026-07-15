@@ -81,20 +81,9 @@ export default function DashboardPage() {
     fetchStats();
   }, []);
 
-  const handleCreate = async () => {
-    setCreating(true);
-    try {
-      const review = await apiClient.createReview({
-        title: `评审  ${new Date().toLocaleDateString('zh-CN')}`,
-        objective: '快速创建的评审 — 请在诊断阶段补充目标',
-      });
-      message.success('评审已创建');
-      router.push(`/reviews/${review.id}`);
-    } catch (e: any) {
-      message.error(e.message ?? '创建失败');
-    } finally {
-      setCreating(false);
-    }
+  const handleCreate = () => {
+    // 导航到新建评审表单页 — 让用户填材料、选 Provider（mock/LongCat/LM Studio）
+    router.push('/reviews/new');
   };
 
   return (
