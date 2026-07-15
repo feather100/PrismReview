@@ -350,18 +350,25 @@ export class QueueService implements OnModuleDestroy {
     }
 
     // user prompt：保留 "You are reviewing as {roleCode}." 前缀（mock 适配器据此提取角色，保证 9.5b 等回归不破）
-    const prompt = `You are reviewing as ${roleCode}.\n\nProposal:\n${objective}`;
+    const prompt = [
+      `You are reviewing as ${roleCode}.`,
+      '',
+      'Proposal:',
+      objective,
+      '',
+      'Respond with ONLY a raw JSON object (no markdown, no reasoning, no prose, no ``` fences).',
+    ].join('\n');
 
     let result: any;
     let observability: any;
     const startTime = Date.now();
 
     try {
-      const out = await adapter.complete({ prompt, system, temperature: 0.1 });
+      const out = await adapter.complete({ prompt, system, temperature: 0.1, jsonMode: adapter.name !== 'mock' });
       const durationMs = Date.now() - startTime;
       const parsed = parseModelOpinion(out.text);
       if (!parsed || !parsed.riskLevel) {
-        throw new Error(`Unparseable model output: ${out.text.substring(0, 300)}`);
+        throw new Error(`Unparseable model output (first 400): ${out.text.substring(0, 300)}`);
       }
       result = parsed;
       observability = {

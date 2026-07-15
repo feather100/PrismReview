@@ -18,6 +18,7 @@ export interface ModelInput {
   system?: string;
   temperature?: number;
   maxTokens?: number;
+  jsonMode?: boolean; // 启用 response_format={type:json_object}
 }
 
 export interface ModelOutput {
@@ -81,9 +82,12 @@ const MOCK_RESPONSES: Record<
 // ── Shared prompt + parsing helpers (used by both adapters + queue.service) ──
 
 export const SYSTEM_PROMPT =
-  'You are a technical reviewer. Review the provided proposal and output a single JSON object ' +
-  'with these exact fields: riskLevel (high|medium|low|info), dimension, issue, recommendation, ' +
-  'confidenceScore (0-100). Output ONLY valid JSON, no markdown, no explanation.';
+  'You are an expert architecture reviewer. Read the proposal below and respond with ' +
+  'ONE strict JSON object (no markdown, no commentary, no prose before or after) with EXACTLY these keys: ' +
+  'riskLevel (one of: high|medium|low|info), dimension (string), issue (string), ' +
+  'recommendation (string), confidenceScore (integer 0-100). ' +
+  'IMPORTANT: output the raw JSON object only — do not wrap in ```json fences, ' +
+  'do not add any explanation, do not translate keys into Chinese.';
 
 export function stripMarkdown(text: string): string {
   const m = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -114,15 +118,44 @@ export function extractRoleCode(prompt: string): string {
 }
 
 /**
+ * 从文本中提取最"完整"的 JSON 对象（支持 reasoning_content 长推理文本）。
+ * 策略：找出所有 {..} 候选，按长度降序排序，尝试 JSON.parse，首个成功即返回。
+ * 这样 reasoning 文本里靠后出现（更大）的优先，应对 LongCat-2.0 / DeepSeek-R1。
+ */
+function extractBestJsonObject(text: string): any | null {
+  // 找所有顶层 {..} 匹配（非贪婪但包含嵌套——基于启发式找 "}\s*[,\n\]}]" 或文本末尾）
+  const candidates: string[] = [];
+  const re = /\{[\s\S]*?\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) candidates.push(m[0]);
+  // 按长度降序（更完整的 JSON 通常更长）
+  candidates.sort((a, b) => b.length - a.length);
+  for (const c of candidates) {
+    try {
+      const parsed = normalizeParsed(JSON.parse(c));
+      if (parsed && (parsed.riskLevel || parsed.dimension || parsed.confidenceScore !== undefined)) return parsed;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+/**
  * Parse a model output (raw JSON text) into a structured opinion object.
- * Returns null when the text is not valid opinion JSON.
+ * Tolerant: accepts pure JSON, ```json fenced blocks, JSON embedded in prose,
+ * and LongCat-2.0 / DeepSeek-R1 thinking-style output (reasoning_content that
+ * embeds the final JSON near the end).
+ * Returns null when no valid opinion JSON can be found.
  */
 export function parseModelOpinion(text: string): any | null {
+  if (!text) return null;
+  const cleaned = stripMarkdown(text);
+  // 1) 整体就是 JSON
   try {
-    return normalizeParsed(JSON.parse(stripMarkdown(text)));
-  } catch {
-    return null;
-  }
+    const r = normalizeParsed(JSON.parse(cleaned));
+    if (r) return r;
+  } catch { /* continue */ }
+  // 2) 文本中嵌入 JSON（含 reasoning_content）
+  return extractBestJsonObject(cleaned);
 }
 
 // ── MockAdapter ──
@@ -189,6 +222,10 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
           ],
           temperature: input.temperature ?? 0.1,
           max_tokens: input.maxTokens ?? maxTokens,
+          // 强制输出合法 JSON payload。
+          // - LongCat-2.0 仅支持 text / json_schema（不支持 json_object），用 text + 强 prompt。
+          // - 纯 OpenAI / vLLM 等支持 json_object。通过 provider 配置选择；默认 text。
+          ...(input.jsonMode && false ? { response_format: { type: 'json_object' } } : {}),
         }),
         signal: controller.signal,
       });
@@ -202,7 +239,12 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
     }
 
     const body: any = await response.json();
-    const rawContent = stripMarkdown(body?.choices?.[0]?.message?.content || '');
+    const choice = body?.choices?.[0];
+    // LongCat-2.0 / 思考型模型（DeepSeek-R1 风格）把最终答案放进 reasoning_content；
+    // 优先读 message.content，为空则回填 reasoning_content（含最终结论）。
+    const rawPrimary = choice?.message?.content || '';
+    const rawReasoning = choice?.message?.reasoning_content || choice?.message?.reasoning || '';
+    const rawContent = rawPrimary ? stripMarkdown(rawPrimary) : (rawReasoning || '');
     const usage = body?.usage;
     return {
       text: rawContent,

@@ -145,22 +145,32 @@ ALLOW_EXTERNAL_MODEL_CALLS=true MODEL_PROVIDER=longcat \
   Route:       A (pure mock) | B (runner + DB opinions)
 ```
 
-### 真实 LLM 模式（可选）
+### 真实 LLM 模式（产品化）
 
-显式 env 启用真实模型（默认始终 mock）：
+PrismReview 支持 **per-review provider 覆盖**：每份评审可以独立选择
+
+- `mock`（默认 — 零成本，零配置，评审由内置规则生成）
+- `lmstudio`（本地 LM Studio，默认 `http://127.0.0.1:1234/v1`）
+- `openai_compatible`（云端兼容端点，如 **LongCat-2.0**）
+
+**创建评审时**在表单里直接选择 provider 即可，无需改环境变量。选 LongCat / LM Studio 评审会真正调用模型发言；选 mock 则确定性兜底。api-key 存入 DB，**不落日志、不返回前端**。
+
+手动启动全局真实 LLM（所有新评审默认走 LLM）：
 
 ```bash
 cd apps/api
 ALLOW_EXTERNAL_MODEL_CALLS=true \
-MODEL_PROVIDER=longcat \
+MODEL_PROVIDER=openai_compatible \
 MODEL_BASE_URL=https://api.longcat.chat/openai/v1 \
 MODEL_NAME=LongCat-2.0 \
 MODEL_API_KEY=<your-key> \
+MODERATOR_PROVIDER=llm \
 node dist/main.js
 ```
 
-支持的 provider：`longcat`（LongCat-2.0）/ `lmstudio`（本地）/ `openai_compatible`（任意兼容端点）。
-Moderator 也可切换为真 LLM：追加 `MODERATOR_PROVIDER=llm`。失败自动降级 mock。
+支持的 provider：`mock` / `lmstudio`（本地，Key 可选）/ `openai_compatible`（任意 OpenAI 兼容端点）。
+
+真实 Moderator：追加 `MODERATOR_PROVIDER=llm`（需 `MODERATOR_PROVIDER=llm` + `ALLOW_EXTERNAL_MODEL_CALLS=true`）。失败自动降级 mock，主流程不中断。
 
 ---
 
