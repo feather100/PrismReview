@@ -44,6 +44,7 @@ export interface ReportResponse {
 export interface CreateReviewInput {
   title: string; objective: string; content?: string; mode?: string;
   provider?: { provider: 'mock' | 'lmstudio' | 'openai_compatible'; model?: string; baseUrl?: string; apiKey?: string; };
+  lang?: 'zh' | 'en'; // 强制专家回复语言（默认 auto-detect）
 }
 export interface ReviewResponse { id: string; title: string; status: string; }
 export interface ReviewListItem { id: string; title: string; objective: string; status: string; mode: string; createdAt: string; updatedAt: string; }

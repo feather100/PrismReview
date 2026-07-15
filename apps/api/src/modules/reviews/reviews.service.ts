@@ -76,6 +76,8 @@ export class ReviewsService {
           apiKey: dto.provider.apiKey,
         }
       : undefined;
+    // 语言强制 (zh / en) — 可选，默认自动检测。
+    const reviewLang: string | undefined = dto.lang && dto.lang !== 'auto' ? dto.lang : undefined;
 
     const review = await this.prisma.review.create({
       data: {
@@ -88,6 +90,7 @@ export class ReviewsService {
         status: 'created',
         ...(providerOverride ? { providerOverride } : {}),
         ...(providerConfig ? { providerConfig } : {}),
+        ...(reviewLang ? { reviewLang } : {}),
       },
     });
     return this.toResponseDto(review);

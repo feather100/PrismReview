@@ -242,6 +242,7 @@ export class QueueService implements OnModuleDestroy {
         // 产品化：每 review 可覆盖 provider / model / apiKey（DB 优先，env 兜底）
         providerOverride: review.providerOverride || undefined,
         providerConfig: review.providerConfig || undefined,
+        reviewLang: review.reviewLang || undefined,
       }, jobId);
     }
   }
@@ -350,10 +351,9 @@ export class QueueService implements OnModuleDestroy {
       }
     }
 
-    // user prompt — language-aware. Le préfixe "You are reviewing as X." reste
-    // en anglais (le mock adapter extrait le code rôle via regex), mais les
-    // consignes passent en chinois si le contenu est chinois.
-    const isZh = isLikelyChinese(objective || '');
+    // 语言决策 : 1) review.lang forcé  2) détection auto depuis l'objectif
+    const forcedLang = (payload as any).reviewLang as string | undefined;
+    const isZh = forcedLang ? forcedLang === 'zh' : isLikelyChinese(objective || '');
     const prompt = [
       `You are reviewing as ${roleCode}.`,
       '',
@@ -370,7 +370,7 @@ export class QueueService implements OnModuleDestroy {
     const startTime = Date.now();
 
     try {
-      const out = await adapter.complete({ prompt, system, temperature: 0.1, jsonMode: adapter.name !== 'mock' });
+      const out = await adapter.complete({ prompt, system, temperature: 0.1, jsonMode: adapter.name !== 'mock', lang: isZh ? 'zh' : 'en' });
       const durationMs = Date.now() - startTime;
       const parsed = parseModelOpinion(out.text);
       if (!parsed || !parsed.riskLevel) {

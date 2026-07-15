@@ -37,4 +37,9 @@ export class CreateReviewDto {
   @ValidateNested()
   @Type(() => ProviderOverrideDto)
   provider?: ProviderOverrideDto;
+
+  // Langue forcée des réponses (zh / en). Facultatif → auto-détection.
+  @IsOptional()
+  @IsEnum(['zh', 'en'])
+  lang?: string;
 }

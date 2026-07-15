@@ -189,6 +189,8 @@ model Review {
   // providerConfig:   { model?, baseUrl?, apiKey? } — apiKey 仅落库，绝不打印/返回给前端
   providerOverride String?      @map("provider_override")
   providerConfig   Json?        @map("provider_config")
+  // --- Langue forcée (zh / en). Null → auto-détection depuis l'objectif. ---
+  reviewLang       String?      @map("review_lang")
   // --- Persistenter Link zum genutzten LlmProvider ---
   llmProviderId    String?      @map("llm_provider_id") @db.Uuid
   llmProvider      LlmProvider? @relation(fields: [llmProviderId], references: [id], onDelete: SetNull, onUpdate: Cascade)

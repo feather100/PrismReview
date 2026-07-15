@@ -29,6 +29,7 @@ export default function NewReviewPage() {
   const [provider, setProvider] = useState<ProviderType>('mock');
   const [workflows, setWorkflows] = useState<WorkflowPreset[]>([]);
   const [availProviders, setAvailProviders] = useState<Record<string, boolean>>({ mock: true, lmstudio: true, openai_compatible: true });
+  const [langMode, setLangMode] = useState<'auto' | 'zh' | 'en'>('auto');
   const router = useRouter();
 
   // 拉取可用 workflow
@@ -54,6 +55,8 @@ export default function NewReviewPage() {
         ...(meta.showKey && values.apiKey ? { apiKey: values.apiKey.trim() } : {}),
       };
     }
+    // 语言：auto → laisser le backend détecter ; zh/en → forcer
+    if (langMode !== 'auto') payload.lang = langMode;
     try {
       const review = await apiClient.createReview(payload);
       message.success(`评审已创建 — provider=${payload.provider?.provider ?? 'mock'}`);
@@ -197,6 +200,20 @@ export default function NewReviewPage() {
               />
             </>
           )}
+        </Card>
+
+        <Card title="③ 评审语言">
+          <Form.Item label="专家回复语言">
+            <Radio.Group
+              defaultValue="auto"
+              onChange={(e) => setLangMode(e.target.value)}
+              options={[
+                { value: 'auto', label: '自动检测（根据评审内容判断中英文）' },
+                { value: 'zh', label: '强制中文' },
+                { value: 'en', label: 'English' },
+              ]}
+            />
+          </Form.Item>
         </Card>
 
         <Form.Item style={{ marginTop: 8 }}>

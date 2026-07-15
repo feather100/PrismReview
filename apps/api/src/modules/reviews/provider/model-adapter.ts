@@ -19,6 +19,7 @@ export interface ModelInput {
   temperature?: number;
   maxTokens?: number;
   jsonMode?: boolean; // 启用 response_format={type:json_object}
+  lang?: 'zh' | 'en'; // 语言提示（由 queue.service 根据内容检测后传入）
 }
 
 export interface ModelOutput {
@@ -112,6 +113,18 @@ export function buildSystemPrompt(content: string): string {
     'IMPORTANT: output the raw JSON object only — do not wrap in ```json fences, ' +
     'do not add any explanation, do not translate keys into Chinese.'
   );
+}
+
+/** Heuristique : texte majoritairement latin (anglais). */
+function isLikelyEnglish(text: string): boolean {
+  if (!text) return false;
+  const total = text.length;
+  let latin = 0;
+  for (let i = 0; i < total; i++) {
+    const code = text.charCodeAt(i);
+    if ((code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a)) latin++;
+  }
+  return total > 0 && latin / total > 0.4;
 }
 
 /** Heuristique CJK : >15% de caractères CJK → considéré comme chinois. */
@@ -221,8 +234,10 @@ export class MockAdapter implements ModelAdapter {
 
   async complete(input: ModelInput): Promise<ModelOutput> {
     const roleCode = extractRoleCode(input.prompt);
-    const isZh = isLikelyChinese(input.prompt || '');
+    // 语言由 queue.service 传入；默认中文（项目主语言）
+    const isZh = input.lang !== 'en';
     const table = isZh ? MOCK_RESPONSES : MOCK_RESPONSES_EN;
+    // (debug removed)
     const base = table[roleCode] || table.CTO;
     return {
       text: JSON.stringify(base),
