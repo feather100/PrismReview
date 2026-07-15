@@ -488,6 +488,16 @@ export class ReviewsService {
    * @deprecated 自 Sprint 5.3 起委托 ReportingService.generateReport()（30 天 back-compat 包装）。
    * 报告生成 / 评分 / 导出逻辑已抽取到 ReportingService。
    */
+  async getModeratorDecisions(reviewId: string, user: any) {
+    await this.assertOwned(reviewId, user.tenantId, user.id);
+    const records = await this.prisma.moderatorDecision.findMany({
+      where: { reviewId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, round: true, decisionType: true, reasoning: true, createdAt: true },
+    });
+    return records;
+  }
+
   async getReport(reviewId: string, user: any): Promise<ReportResponseDto> {
     return this.reportingService.generateReport(reviewId, user);
   }

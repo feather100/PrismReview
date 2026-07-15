@@ -163,6 +163,15 @@ export class ReviewsController {
     return this.reviewsService.summarize(reviewId, user);
   }
 
+  @Get(':reviewId/moderator-decisions')
+  @RequirePermissions('review.read')
+  async getModeratorDecisions(
+    @CurrentUser() user: AuthUser,
+    @Param('reviewId', new ParseUUIDPipe({ version: '4' })) reviewId: string,
+  ) {
+    return this.reviewsService.getModeratorDecisions(reviewId, user);
+  }
+
   @Get(':reviewId/report')
   async getReport(
     @CurrentUser() user: AuthUser,

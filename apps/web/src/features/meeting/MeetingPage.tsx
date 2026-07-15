@@ -1,11 +1,12 @@
 'use client';
 import React, { useState, useCallback, useEffect } from 'react';
-import { Alert, Spin, Tag, Tooltip, Button, Space, Modal, Form, Input, Select, message, Divider } from 'antd';
+import { Alert, Spin, Tag, Tooltip, Button, Space, Modal, Form, Input, Select, message, Divider, Card } from 'antd';
 import MeetingHeader from './components/MeetingHeader';
 import AgentPanel, { AgentStatus } from './components/AgentPanel';
 import SpeechFlow from './components/SpeechFlow';
 import ContextPanel from './components/ContextPanel';
 import { SpeechCardData } from './components/SpeechCard';
+import ModeratorPanel from './components/ModeratorPanel';
 import { useMeetingSSE, MeetingEventPayload } from '../../lib/realtime/useMeetingSSE';
 import { apiClient } from '../../lib/api-client/client';
 import { useRouter } from 'next/navigation';
@@ -16,6 +17,7 @@ export default function MeetingPage({ reviewId }: { reviewId: string }) {
   const [cards, setCards] = useState<SpeechCardData[]>([]);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [completedTurns, setCompletedTurns] = useState(0);
+  const [moderatorRefresh, setModeratorRefresh] = useState(0);
   const router = useRouter();
   const [hitlOpen, setHitlOpen] = useState(false);
   const [hitlBusy, setHitlBusy] = useState(false);
@@ -135,6 +137,15 @@ export default function MeetingPage({ reviewId }: { reviewId: string }) {
   const isSSEEnabled = reviewStatus === 'running' || reviewStatus === 'interrupted' || reviewStatus === 'summarized' || reviewStatus === 'completed';
   const { connectionStatus } = useMeetingSSE(reviewId, handleSSEEvent, isSSEEnabled);
 
+  // 刷新 Moderator 面板 / 状态探测 toutes les 2s pendant le meeting
+  useEffect(() => {
+    if (reviewStatus === 'completed') return;
+    const t = setInterval(() => {
+      setModeratorRefresh((n) => n + 1);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [reviewStatus]);
+
   if (initialLoading) {
     return <div style={{ textAlign: 'center', marginTop: 100 }}><Spin tip="加载中..." /></div>;
   }
@@ -209,11 +220,11 @@ export default function MeetingPage({ reviewId }: { reviewId: string }) {
           <SpeechFlow cards={cards} />
         </div>
         
-        {/* Right Column: Context Panel (25%) */}
+        {/* Right Column: Modérateur (25%) */}
         <div style={{ width: '25%', paddingLeft: 8 }}>
-          <ContextPanel summary={reviewStatus === 'running' || reviewStatus === 'summarized'
-            ? '实时辩论进行中：专家意见将作为上下文输入，帮助 Moderator 逼近共识。'
-            : '评审上下文面板：展示本轮辩论的目标、当前轮次与收敛进度。'} />
+          <Card title="👑 Modérateur" size="small" styles={{ body: { maxHeight: 280, overflow: 'auto' } }}>
+            <ModeratorPanel reviewId={reviewId} refreshKey={moderatorRefresh} />
+          </Card>
         </div>
       </div>
 

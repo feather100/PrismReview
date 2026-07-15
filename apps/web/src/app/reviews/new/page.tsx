@@ -6,18 +6,16 @@ import { apiClient, WorkflowPreset } from '../../../lib/api-client/client';
 
 const { Title, Paragraph } = Typography;
 
-type ProviderType = 'mock' | 'lmstudio' | 'openai_compatible';
+type ProviderType = 'mock' | 'openai_compatible';
 interface ProviderConfig { provider: ProviderType; model?: string; baseUrl?: string; apiKey?: string; }
 
 const PROVIDERS: { value: ProviderType; label: string; desc: string }[] = [
   { value: 'mock', label: 'Mock（默认）', desc: '零成本、零配置，专家意见由内置规则生成，适合演示与流程打通' },
-  { value: 'lmstudio', label: 'LM Studio（本地）', desc: '调用本地 LM Studio（默认 127.0.0.1:1234，Gemma-4）' },
-  { value: 'openai_compatible', label: 'LongCat-2.0（云端）', desc: '调用 LongCat-2.0 兼容 OpenAI 协议，需要 Base URL + API Key' },
+  { value: 'openai_compatible', label: '云端 LLM (LongCat-2.0 / OpenAI / DeepSeek / …)', desc: '选择供应商 + 贴 API Key，Moderator + 专家均为真 LLM 发言' },
 ];
 
 const LLM_FIELDS: Record<ProviderType, { showModel: boolean; showBaseUrl: boolean; showKey: boolean; defaultModel: string; defaultBaseUrl: string; keyRequired: boolean }> = {
   mock: { showModel: false, showBaseUrl: false, showKey: false, defaultModel: '', defaultBaseUrl: '', keyRequired: false },
-  lmstudio: { showModel: true, showBaseUrl: false, showKey: false, defaultModel: 'google/gemma-4-12b', defaultBaseUrl: 'http://127.0.0.1:1234/v1', keyRequired: false },
   openai_compatible: { showModel: true, showBaseUrl: true, showKey: true, defaultModel: 'LongCat-2.0', defaultBaseUrl: 'https://api.longcat.chat/openai/v1', keyRequired: true },
 };
 
@@ -28,7 +26,7 @@ export default function NewReviewPage() {
   const [loading, setLoading] = useState(false);
   const [provider, setProvider] = useState<ProviderType>('mock');
   const [workflows, setWorkflows] = useState<WorkflowPreset[]>([]);
-  const [availProviders, setAvailProviders] = useState<Record<string, boolean>>({ mock: true, lmstudio: true, openai_compatible: true });
+  const [availProviders, setAvailProviders] = useState<Record<string, boolean>>({ mock: true, openai_compatible: true });
   const [langMode, setLangMode] = useState<'auto' | 'zh' | 'en'>('auto');
   const router = useRouter();
 

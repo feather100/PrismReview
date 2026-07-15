@@ -177,7 +177,7 @@ export class LlmProviderService {
 
   private validate(input: { name: string; provider: string; model: string; baseUrl: string }) {
     if (!input.name?.trim()) throw new BadRequestException('Name is required');
-    if (!['openai_compatible', 'lmstudio', 'mock'].includes(input.provider)) {
+    if (!['openai_compatible', 'mock'].includes(input.provider)) {
       throw new BadRequestException(`Unsupported provider: ${input.provider}`);
     }
     if (!input.model?.trim()) throw new BadRequestException('Model is required');

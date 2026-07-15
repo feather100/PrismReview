@@ -7,7 +7,7 @@ import { Type } from 'class-transformer';
  * apiKey 仅写入 DB providerConfig，绝不返回给前端、绝不打印日志。
  */
 export class ProviderOverrideDto {
-  @IsEnum(['mock', 'lmstudio', 'openai_compatible']) provider: string;
+  @IsEnum(['mock', 'openai_compatible']) provider: string;
 
   @IsOptional() @IsString() model?: string;
 
