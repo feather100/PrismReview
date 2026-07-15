@@ -8,6 +8,7 @@ services:
     # See docs/sprint-0-kickoff.md §4.5 for recovery plan.
     image: postgres:16-alpine
     container_name: prismreview-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: prismreview
       POSTGRES_PASSWORD: prismreview
@@ -26,6 +27,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: prismreview-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -39,6 +41,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: prismreview-minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: prismreview

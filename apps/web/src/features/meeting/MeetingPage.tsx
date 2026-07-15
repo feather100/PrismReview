@@ -157,7 +157,9 @@ export default function MeetingPage({ reviewId }: { reviewId: string }) {
         
         {/* Right Column: Context Panel (25%) */}
         <div style={{ width: '25%', paddingLeft: 8 }}>
-          <ContextPanel summary="使用 Go 微服务重构订单系统，替代遗留的 PHP 单体架构..." />
+          <ContextPanel summary={reviewStatus === 'running' || reviewStatus === 'summarized'
+            ? '实时辩论进行中：专家意见将作为上下文输入，帮助 Moderator 逼近共识。'
+            : '评审上下文面板：展示本轮辩论的目标、当前轮次与收敛进度。'} />
         </div>
       </div>
     </div>

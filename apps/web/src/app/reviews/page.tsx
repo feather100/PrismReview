@@ -8,16 +8,15 @@ import { apiClient, ReviewListItem, GetReviewsParams } from '../../lib/api-clien
 const { Title, Text } = Typography;
 const { CheckableTag } = Tag;
 
+// Mirror of the server's 9-state enum (ReviewsService.REVIEW_STATUS_FLOW).
+// Do not add pre-9.3 aliases (draft / diagnosing / ready / summarizing) —
+// the backend no longer emits them. See docs/coordination/Codebase_Audit_Report.md §3.
 const statusMap: Record<string, { text: string; color: string }> = {
   created: { text: '已创建', color: 'default' },
-  draft: { text: '草稿', color: 'default' },
-  diagnosing: { text: '诊断中', color: 'processing' },
-  ready: { text: '待评审', color: 'processing' },
   diagnosed: { text: '已诊断', color: 'processing' },
   running: { text: '评审中', color: 'processing' },
-  interrupted: { text: '已中断', color: 'warning' },
-  summarizing: { text: '总结中', color: 'processing' },
-  summarized: { text: '总结中', color: 'processing' },
+  interrupted: { text: '已中断(HITL)', color: 'warning' },
+  summarized: { text: '本轮已汇总', color: 'processing' },
   completed: { text: '已完成', color: 'success' },
   failed: { text: '失败', color: 'error' },
   aborted: { text: '已中止', color: 'warning' },

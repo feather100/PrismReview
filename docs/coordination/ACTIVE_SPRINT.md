@@ -7,11 +7,23 @@
 
 ## 当前状态
 
-- **Current Sprint**: Sprint 6.0 全栈加固 + README/文档刷新完成并推送
+- **Current Sprint**: P6 起步路线图已生成 — Sprint A（前端产品化）待启动；P1–P5 收官 + 审查报告修复已完成并推送
 - **Phase**: P1–P5 完整收官（commit 5e8dbd9）；P6（规模化 + 生产硬化）待启动
 - **Status**: ✅ All P1–P5 Go + README/CONTRIBUTING/ARCHITECTURE 同步更新 + LongCat POC pass（fail-closed 生效）
-- **Last Updated**: 2026-07-14
+- **Last Updated**: 2026-07-15
 - **Owner**: Codex 协调
+
+---
+
+## P6 路线图（3 个 Sprint，待启动）
+
+详见 [docs/roadmap/Next_Steps.md](docs/roadmap/Next_Steps.md)。概括：
+
+| Sprint | 范围 | 状态 |
+|--------|------|------|
+| A | 前端产品化重设计 + Dashboard（2 周） | 🔜 待启动 |
+| B | 可观测性 + CI 稳定 + Jest 单测覆盖（2 周） | 🟡 依赖 A |
+| C | BullMQ worker 抽取 + 进程边界（2 周） | 🟡 依赖 B |
 
 ---
 

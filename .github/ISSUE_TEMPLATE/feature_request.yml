@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a new capability or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      placeholder: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      placeholder: What would you like to see built?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: Any alternative solutions or features you have considered
+  - type: checkboxes
+    id: redlines
+    attributes:
+      label: Red-line alignment
+      description: Which invariant(s) must this feature preserve?
+      options:
+        - label: Default behavior stays fully mock (no API key required)
+        - label: No new A2A wiring (experts coordinate only through Moderator)
+        - label: Memory remains distillation-only (no chat-history raw text stored)
