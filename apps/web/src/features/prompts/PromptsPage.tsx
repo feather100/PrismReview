@@ -4,7 +4,7 @@ import {
   Typography, Card, Row, Col, Table, Tag, Button, Space, message, Modal, Form, Input, Select, Alert, Empty, Spin, Collapse,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { moduleClient, PromptTemplate } from '../../lib/api-client/client';
+import { apiClient, PromptTemplate } from '../../lib/api-client/client';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -27,7 +27,7 @@ export default function PromptsPage() {
     setLoading(true);
     setError(null);
     try {
-      setTpls(await moduleClient.listPrompts());
+      setTpls(await apiClient.listPrompts());
     } catch (e: any) {
       setError(e.message ?? '加载 Prompt 模板失败');
     } finally {
@@ -41,7 +41,7 @@ export default function PromptsPage() {
     setSubmitting(true);
     try {
       const v = await form.validateFields();
-      await moduleClient.registerPrompt({
+      await apiClient.registerPrompt({
         roleCode: v.roleCode,
         layer: v.layer,
         content: v.content,
@@ -58,7 +58,7 @@ export default function PromptsPage() {
 
   const handleRollback = async (roleCode: string, layer: string, version: string) => {
     try {
-      await moduleClient.rollbackPrompt(roleCode, layer, version);
+      await apiClient.rollbackPrompt(roleCode, layer, version);
       message.success(`已回滚到 ${version}`);
       await fetchPrompts();
     } catch (e: any) {
@@ -69,7 +69,7 @@ export default function PromptsPage() {
   const handleViewHistory = async (roleCode: string, layer: string) => {
     setHistOpen(roleCode + '/' + layer);
     try {
-      setHistory(await moduleClient.promptHistory(roleCode, layer));
+      setHistory(await apiClient.promptHistory(roleCode, layer));
     } catch { /* ignore */ }
   };
 

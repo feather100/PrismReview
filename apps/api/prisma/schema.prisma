@@ -14,19 +14,19 @@ datasource db {
 model Tenant {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
-  region    String   @default("cn")       // cn | global
-  status    String   @default("active")   // active | suspended
+  region    String   @default("cn") // cn | global
+  status    String   @default("active") // active | suspended
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  users          User[]
-  departments    Department[]
-  agentRoles     AgentRole[]
-  knowledgeDocs  KnowledgeDocument[]
+  users           User[]
+  departments     Department[]
+  agentRoles      AgentRole[]
+  knowledgeDocs   KnowledgeDocument[]
   knowledgeChunks KnowledgeChunk[]
-  reviews        Review[]
-  auditLogs      AuditLog[]
-  businessEvents BusinessEvent[]
+  reviews         Review[]
+  auditLogs       AuditLog[]
+  businessEvents  BusinessEvent[]
 
   @@map("tenants")
 }
@@ -44,18 +44,18 @@ model Department {
 }
 
 model User {
-  id            String   @id @default(uuid()) @db.Uuid
-  tenantId      String   @map("tenant_id") @db.Uuid
-  departmentId  String?  @map("department_id") @db.Uuid
-  email         String   @unique
-  name          String
-  passwordHash  String   @map("password_hash")
-  platformRole  String   @default("user") @map("platform_role") // super_admin | enterprise_admin | department_admin | user
-  status        String   @default("active")                     // active | disabled
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  departmentId String?  @map("department_id") @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String   @map("password_hash")
+  platformRole String   @default("user") @map("platform_role") // super_admin | enterprise_admin | department_admin | user
+  status       String   @default("active") // active | disabled
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
   department Department? @relation(fields: [departmentId], references: [id])
   reviews    Review[]
 
@@ -71,7 +71,7 @@ model AgentRole {
   tenantId        String   @map("tenant_id") @db.Uuid
   departmentId    String?  @map("department_id") @db.Uuid
   name            String
-  code            String                   // e.g. "CTO", "CFO"
+  code            String // e.g. "CTO", "CFO"
   type            String   @default("preset") // preset | custom | marketplace
   status          String   @default("enabled") // enabled | disabled | deleted
   activeVersionId String?  @unique @map("active_version_id") @db.Uuid
@@ -96,7 +96,7 @@ model AgentRoleVersion {
   createdBy              String   @map("created_by") @db.Uuid
   createdAt              DateTime @default(now()) @map("created_at")
 
-  role          AgentRole @relation(fields: [roleId], references: [id])
+  role          AgentRole  @relation(fields: [roleId], references: [id])
   activeForRole AgentRole? @relation("ActiveVersion")
 
   @@unique([roleId, version])
@@ -108,17 +108,17 @@ model AgentRoleVersion {
 // ============================================================
 
 model KnowledgeDocument {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @map("tenant_id") @db.Uuid
-  scope     String   @default("global")    // global | role | department
-  ownerRoleId String? @map("owner_role_id") @db.Uuid
-  filename   String
-  mimeType   String   @map("mime_type")
-  sizeBytes  BigInt   @map("size_bytes")
-  storageUri String   @map("storage_uri")
-  status     String   @default("uploading") // uploading | parsing | chunking | indexing | ready | parse_failed | index_failed
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  scope       String   @default("global") // global | role | department
+  ownerRoleId String?  @map("owner_role_id") @db.Uuid
+  filename    String
+  mimeType    String   @map("mime_type")
+  sizeBytes   BigInt   @map("size_bytes")
+  storageUri  String   @map("storage_uri")
+  status      String   @default("uploading") // uploading | parsing | chunking | indexing | ready | parse_failed | index_failed
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   tenant Tenant           @relation(fields: [tenantId], references: [id])
   chunks KnowledgeChunk[]
@@ -128,14 +128,14 @@ model KnowledgeDocument {
 }
 
 model KnowledgeChunk {
-  id            String   @id @default(uuid()) @db.Uuid
-  documentId    String   @map("document_id") @db.Uuid
-  tenantId      String   @map("tenant_id") @db.Uuid
-  content       String
-  metadata      Json     @default("{}")
-  reviewStatus  String   @default("pending_review") @map("review_status") // pending_review | approved | rejected | deprecated
-  embeddingRef  String?  @map("embedding_ref")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid()) @db.Uuid
+  documentId   String   @map("document_id") @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  content      String
+  metadata     Json     @default("{}")
+  reviewStatus String   @default("pending_review") @map("review_status") // pending_review | approved | rejected | deprecated
+  embeddingRef String?  @map("embedding_ref")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   document KnowledgeDocument @relation(fields: [documentId], references: [id])
   tenant   Tenant            @relation(fields: [tenantId], references: [id])
@@ -155,61 +155,86 @@ model Review {
   createdBy     String   @map("created_by") @db.Uuid
   title         String
   objective     String
-  inputType     String   @default("text")   // file | text | both
+  inputType     String   @default("text") // file | text | both
   mode          String   @default("round_robin") // round_robin | free_debate | blind_consensus | red_blue
   status        String   @default("created") // created | diagnosed | running | summarized | completed | failed | aborted | interrupted | archived
   // P1 (9.3) enum rename per Contract §7.6: draft/diagnosing→created, ready→diagnosed, summarizing→summarized;
   // added aborted (hard-stop / convergence override). interrupted/archived retained as non-normative补充态.
   diagnosis     Json?
-  roleSelection  Json?   @map("role_selection")
+  roleSelection Json?    @map("role_selection")
   // --- P1 (9.2) additive: checkpoint / resume support ---
-  currentRound  Int     @default(1) @map("current_round")   // current round (1-based)
-  currentNodeId String? @map("current_node_id")            // current graph node (resume anchor)
+  currentRound  Int      @default(1) @map("current_round") // current round (1-based)
+  currentNodeId String?  @map("current_node_id") // current graph node (resume anchor)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  tenant            Tenant              @relation(fields: [tenantId], references: [id])
-  creator           User                @relation(fields: [createdBy], references: [id])
-  turns             ReviewTurn[]
-  opinions          ReviewOpinion[]
-  report            Report?
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  creator            User                @relation(fields: [createdBy], references: [id])
+  turns              ReviewTurn[]
+  opinions           ReviewOpinion[]
+  report             Report?
   // --- P1 (9.2) additive: reverse relations for new audit/checkpoint tables ---
-  checkpoints       ReviewCheckpoint[]
+  checkpoints        ReviewCheckpoint[]
   moderatorDecisions ModeratorDecision[]
   // --- Sprint 5.2 P4 additive: Tool call requests (reverse relation) ---
-  toolCallRequests ToolCallRequest[]
+  toolCallRequests   ToolCallRequest[]
   // --- Sprint 4.0 additive: provider quality evaluation reports (reverse relation) ---
-  qualityReports    QualityReport[]
+  qualityReports     QualityReport[]
   // --- Sprint 5.3 P5 additive: ScoringResult 审计快照（加权评分权重 + verdict 阈值，可审计）---
   // nullable：旧 Review 无快照 → 兼容；评分时由 ScoringService 写入。不新增表（纯 JSON 列）。
-  scoringConfig   Json?   @map("scoring_config")
+  scoringConfig      Json?               @map("scoring_config")
 
   // --- Productization: per-review provider override (optional; falls back to global env default) ---
   // providerOverride: "mock" | "lmstudio" | "openai_compatible"
   // providerConfig:   { model?, baseUrl?, apiKey? } — apiKey 仅落库，绝不打印/返回给前端
-  providerOverride String?  @map("provider_override")
-  providerConfig   Json?    @map("provider_config")
+  providerOverride String?      @map("provider_override")
+  providerConfig   Json?        @map("provider_config")
+  // --- Persistenter Link zum genutzten LlmProvider ---
+  llmProviderId    String?      @map("llm_provider_id") @db.Uuid
+  llmProvider      LlmProvider? @relation(fields: [llmProviderId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([tenantId, createdBy, status])
   @@map("reviews")
 }
 
-model ReviewTurn {
-  id            String    @id @default(uuid()) @db.Uuid
-  reviewId      String    @map("review_id") @db.Uuid
-  turnIndex     Int       @map("turn_index")
-  phase         String?
-  roleVersionId String    @map("role_version_id") @db.Uuid
-  status        String    @default("queued") // queued | retrieving | thinking | speaking | completed | timeout | failed | skipped | interrupted_pending
-  startedAt     DateTime? @map("started_at")
-  completedAt   DateTime? @map("completed_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  // --- P1 (9.2) additive: round + idempotency + opinion schema version ---
-  round          Int    @default(1) @map("round")                 // P1: round (1-based)
-  idempotencyKey String @unique @map("idempotency_key")           // P1: ${reviewId}::${roleVersionId}::${round}
-  schemaVersion  String @default("1.0") @map("schema_version")     // P1: opinion schema version (aligned with ReviewOpinion)
+/// LLM Provider-Konfiguration (运行时 Admin-UI verwaltbar).
+/// Aufbau: mehrere Provider können hinterlegt werden, genau einer ist aktiv.
+/// apiKey wird AES-256-GCM verschlüsselt abgelegt (der Secret kommt aus env oder wird per Setup gesetzt).
+model LlmProvider {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @unique @map("name") // anzeigename: "LongCat-2.0", "LM Studio lokal" …
+  provider   String   @map("provider") // "openai_compatible" | "lmstudio" | "mock"
+  model      String   @map("model") // modell-name, z.B. "LongCat-2.0"
+  baseUrl    String   @map("base_url") // z.B. "https://api.longcat.chat/openai/v1"
+  apiKeyEnc  String?  @map("api_key_enc") // base64 der verschlüsselten api-key (leer = kein key nötig / mock)
+  isActive   Boolean  @default(false) @map("is_active")
+  status     String   @default("unknown") @map("status") // "ready" | "unreachable" | "unknown"
+  lastTestAt String?  @map("last_test_at") // ISO-timestamp des letzten Verbindungs-Tests
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  review   Review           @relation(fields: [reviewId], references: [id])
+  reviews Review[]
+
+  @@index([isActive])
+  @@map("llm_providers")
+}
+
+model ReviewTurn {
+  id             String    @id @default(uuid()) @db.Uuid
+  reviewId       String    @map("review_id") @db.Uuid
+  turnIndex      Int       @map("turn_index")
+  phase          String?
+  roleVersionId  String    @map("role_version_id") @db.Uuid
+  status         String    @default("queued") // queued | retrieving | thinking | speaking | completed | timeout | failed | skipped | interrupted_pending
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  // --- P1 (9.2) additive: round + idempotency + opinion schema version ---
+  round          Int       @default(1) @map("round") // P1: round (1-based)
+  idempotencyKey String    @unique @map("idempotency_key") // P1: ${reviewId}::${roleVersionId}::${round}
+  schemaVersion  String    @default("1.0") @map("schema_version") // P1: opinion schema version (aligned with ReviewOpinion)
+
+  review   Review          @relation(fields: [reviewId], references: [id])
   opinions ReviewOpinion[]
 
   @@index([reviewId, turnIndex])
@@ -217,26 +242,26 @@ model ReviewTurn {
 }
 
 model ReviewOpinion {
-  id               String    @id @default(uuid()) @db.Uuid
-  reviewId         String    @map("review_id") @db.Uuid
-  turnId           String    @map("turn_id") @db.Uuid
+  id               String   @id @default(uuid()) @db.Uuid
+  reviewId         String   @map("review_id") @db.Uuid
+  turnId           String   @map("turn_id") @db.Uuid
   dimension        String
-  riskLevel        String    @map("risk_level") // high | medium | low | info
+  riskLevel        String   @map("risk_level") // high | medium | low | info
   issue            String
   recommendation   String
-  citations        Json      @default("[]")
-  confidenceScore  Int       @map("confidence_score")
-  reasoningSummary String?   @map("reasoning_summary")
-  modelOutputRef   String?   @map("model_output_ref")
-  feedback         String?   // valuable | adopted | false_positive | ignored
-  createdAt        DateTime  @default(now()) @map("created_at")
+  citations        Json     @default("[]")
+  confidenceScore  Int      @map("confidence_score")
+  reasoningSummary String?  @map("reasoning_summary")
+  modelOutputRef   String?  @map("model_output_ref")
+  feedback         String? // valuable | adopted | false_positive | ignored
+  createdAt        DateTime @default(now()) @map("created_at")
   // --- P1 (9.2) additive: opinion schema version + round (for report aggregation) ---
-  schemaVersion    String @default("1.0") @map("schema_version") // P1: aligned with §4 StructuredOpinion
-  round            Int?   @map("round")                           // P1: redundant column for report aggregation (source of truth = ReviewTurn.round)
+  schemaVersion    String   @default("1.0") @map("schema_version") // P1: aligned with §4 StructuredOpinion
+  round            Int?     @map("round") // P1: redundant column for report aggregation (source of truth = ReviewTurn.round)
   // --- Sprint 5.1 P3 (Prompt + Memory): prompt 版本溯源（ComposedPrompt.templateRefs 序列化）---
-  promptRefs       Json?  @map("prompt_refs")
+  promptRefs       Json?    @map("prompt_refs")
   // --- P4 (Sprint 5.2) Tool + HITL：意见来源（'llm' | 'human' | 'mock'）---
-  source           String?  @map("source") @default("llm")
+  source           String?  @default("llm") @map("source")
 
   review Review     @relation(fields: [reviewId], references: [id])
   turn   ReviewTurn @relation(fields: [turnId], references: [id])
@@ -254,18 +279,18 @@ model ReviewOpinion {
 
 // ToolCallRequest — 经 Moderator 审批后的工具调用记录（P4 Tool 层，mock 默认不调真实 MCP）。
 model ToolCallRequest {
-  id            String   @id @default(uuid()) @db.Uuid
-  reviewId      String   @map("review_id") @db.Uuid
-  round         Int
-  requestedBy   String   @map("requested_by") // 'moderator'
-  toolName      String   @map("tool_name")
-  input         Json     @default("{}")
-  approvedBy    String?  @map("approved_by")   // ModeratorDecision.id
-  status        String   @default("pending")   // pending|executing|completed|failed|denied
-  result        Json?
-  deniedReason  String?  @map("denied_reason")
-  createdAt     DateTime @default(now()) @map("created_at")
-  completedAt   DateTime? @map("completed_at")
+  id           String    @id @default(uuid()) @db.Uuid
+  reviewId     String    @map("review_id") @db.Uuid
+  round        Int
+  requestedBy  String    @map("requested_by") // 'moderator'
+  toolName     String    @map("tool_name")
+  input        Json      @default("{}")
+  approvedBy   String?   @map("approved_by") // ModeratorDecision.id
+  status       String    @default("pending") // pending|executing|completed|failed|denied
+  result       Json?
+  deniedReason String?   @map("denied_reason")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  completedAt  DateTime? @map("completed_at")
 
   review Review @relation(fields: [reviewId], references: [id])
 
@@ -277,7 +302,7 @@ model ToolCallRequest {
 model ToolDefinitionRecord {
   id           String   @id @default(uuid()) @db.Uuid
   name         String   @unique
-  type         String                         // knowledge_search|code_analysis|web_search|calculation|custom
+  type         String // knowledge_search|code_analysis|web_search|calculation|custom
   description  String
   inputSchema  Json     @map("input_schema")
   mcpServerRef String   @map("mcp_server_ref")
@@ -292,13 +317,13 @@ model ToolDefinitionRecord {
 // ============================================================
 
 model Report {
-  id       String   @id @default(uuid()) @db.Uuid
-  reviewId String   @unique @map("review_id") @db.Uuid
-  status   String   @default("generating") // generating | ready | failed | human_review_required
-  content  Json?
-  htmlUri  String?  @map("html_uri")
-  pdfUri   String?  @map("pdf_uri")
-  docxUri  String?  @map("docx_uri")
+  id        String   @id @default(uuid()) @db.Uuid
+  reviewId  String   @unique @map("review_id") @db.Uuid
+  status    String   @default("generating") // generating | ready | failed | human_review_required
+  content   Json?
+  htmlUri   String?  @map("html_uri")
+  pdfUri    String?  @map("pdf_uri")
+  docxUri   String?  @map("docx_uri")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -335,7 +360,7 @@ model AuditLog {
   id         String   @id @default(uuid()) @db.Uuid
   tenantId   String   @map("tenant_id") @db.Uuid
   userId     String?  @map("user_id") @db.Uuid
-  action     String                    // resource.action e.g. "review.created"
+  action     String // resource.action e.g. "review.created"
   resource   String
   resourceId String?  @map("resource_id")
   detail     Json?
@@ -374,9 +399,9 @@ model BusinessEvent {
 model ReviewCheckpoint {
   id        String   @id @default(uuid()) @db.Uuid
   reviewId  String   @map("review_id") @db.Uuid
-  nodeId    String   @map("node_id")          // graph node after transition (= state)
-  stateJson String   @map("state_json")       // ReviewState serialized (JSON text)
-  sequence  Int                             // monotonically increasing, latest wins
+  nodeId    String   @map("node_id") // graph node after transition (= state)
+  stateJson String   @map("state_json") // ReviewState serialized (JSON text)
+  sequence  Int // monotonically increasing, latest wins
   createdAt DateTime @default(now()) @map("created_at")
 
   review Review @relation(fields: [reviewId], references: [id])
@@ -388,18 +413,18 @@ model ReviewCheckpoint {
 
 // Moderator decision audit (Contract §5.1 / §7.5).
 model ModeratorDecision {
-  id              String   @id @default(uuid()) @db.Uuid
-  reviewId        String   @map("review_id") @db.Uuid
-  round           Int      @map("round")
-  decisionType    String   @map("decision_type") // advance_round | continue_debate | converge | force_stop | terminate_proposal | tool_approval
-  reasoning       String
-  ruleCheckResult Json     @map("rule_check_result") // RuleCheckResult serialized
+  id                    String   @id @default(uuid()) @db.Uuid
+  reviewId              String   @map("review_id") @db.Uuid
+  round                 Int      @map("round")
+  decisionType          String   @map("decision_type") // advance_round | continue_debate | converge | force_stop | terminate_proposal | tool_approval
+  reasoning             String
+  ruleCheckResult       Json     @map("rule_check_result") // RuleCheckResult serialized
   // ── P4 (Sprint 5.2) 审计增强（Contract §5 / §4.4）──
-  proposedTools          String[] @default([]) @map("proposed_tools")          // Moderator 本轮提议的工具名列表
-  toolApprovalReasoning String?  @map("tool_approval_reasoning")              // 审批工具的理由
-  llmRawOutput           String?  @map("llm_raw_output")                       // LLM 原始输出（脱敏，仅 providerSource=llm 时填写）
-  sanityCheckResult      Json?    @map("sanity_check_result")                  // 反对 sanity check 结果
-  createdAt       DateTime @default(now()) @map("created_at")
+  proposedTools         String[] @default([]) @map("proposed_tools") // Moderator 本轮提议的工具名列表
+  toolApprovalReasoning String?  @map("tool_approval_reasoning") // 审批工具的理由
+  llmRawOutput          String?  @map("llm_raw_output") // LLM 原始输出（脱敏，仅 providerSource=llm 时填写）
+  sanityCheckResult     Json?    @map("sanity_check_result") // 反对 sanity check 结果
+  createdAt             DateTime @default(now()) @map("created_at")
 
   review Review @relation(fields: [reviewId], references: [id])
 
@@ -415,26 +440,26 @@ model ModeratorDecision {
 // (or one run inside a batch benchmark). The evaluation data source is the
 // ReviewOpinion rows produced by the (already-run) ModelAdapter.
 model QualityReport {
-  id String @id @default(uuid()) @db.Uuid
-  reviewId String @map("review_id") @db.Uuid
+  id             String @id @default(uuid()) @db.Uuid
+  reviewId       String @map("review_id") @db.Uuid
   providerSource String @map("provider_source") // mock | lmstudio | openai_compatible | fallback_mock | failed
-  runMode String @map("run_mode") // single | batch
+  runMode        String @map("run_mode") // single | batch
 
   // --- Core metrics ---
-  avgConfidence Float @map("avg_confidence") // AVG(confidenceScore)
-  minConfidence Int @map("min_confidence")
-  maxConfidence Int @map("max_confidence")
-  opinionCount Int @map("opinion_count")
+  avgConfidence     Float    @map("avg_confidence") // AVG(confidenceScore)
+  minConfidence     Int      @map("min_confidence")
+  maxConfidence     Int      @map("max_confidence")
+  opinionCount      Int      @map("opinion_count")
   dimensionsCovered String[] @map("dimensions_covered") // distinct dimensions actually present in opinions
-  riskDistribution Json @map("risk_distribution") // { high:N, medium:N, low:N, info:N }
-  consistencyScore Float? @map("consistency_score") // cross-run consistency (batch mode)
+  riskDistribution  Json     @map("risk_distribution") // { high:N, medium:N, low:N, info:N }
+  consistencyScore  Float?   @map("consistency_score") // cross-run consistency (batch mode)
   missingDimensions String[] @map("missing_dimensions") // expected dimensions not covered
 
   // --- Meta ---
-  durationMs Int @map("duration_ms")
-  modelName String? @map("model_name")
-  errorMessage String? @map("error_message")
-  createdAt DateTime @default(now()) @map("created_at")
+  durationMs   Int      @map("duration_ms")
+  modelName    String?  @map("model_name")
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   review Review @relation(fields: [reviewId], references: [id])
 
@@ -450,14 +475,14 @@ model QualityReport {
 
 // ReviewerMemory — 蒸馏 profile（非聊天历史）。按 (tenantId, roleCode, reviewerUserId) 唯一。
 model ReviewerMemory {
-  id             String   @id @default(uuid()) @db.Uuid
-  tenantId       String   @map("tenant_id") @db.Uuid
-  roleCode       String   @map("role_code")
-  reviewerUserId String   @map("reviewer_user_id") @db.Uuid
-  profile        Json     // ReviewerProfile 序列化（维度擅长 / 偏见摘要，不含原文历史）
-  totalReviews   Int      @default(0) @map("total_reviews")
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  roleCode       String    @map("role_code")
+  reviewerUserId String    @map("reviewer_user_id") @db.Uuid
+  profile        Json // ReviewerProfile 序列化（维度擅长 / 偏见摘要，不含原文历史）
+  totalReviews   Int       @default(0) @map("total_reviews")
   lastReviewAt   DateTime? @map("last_review_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@unique([tenantId, roleCode, reviewerUserId])
   @@index([tenantId])
@@ -466,13 +491,13 @@ model ReviewerMemory {
 
 // ProjectMemory — 项目级知识（方案背景 / 历史决策 / 约束）。首次用 tenantId 代理 projectId。
 model ProjectMemory {
-  id         String   @id @default(uuid()) @db.Uuid
-  tenantId   String   @map("tenant_id") @db.Uuid
-  projectId  String   @map("project_id")
-  background String   @default("")
-  decisions  Json     @default("[]") // historicalDecisions 序列化
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  projectId   String   @map("project_id")
+  background  String   @default("")
+  decisions   Json     @default("[]") // historicalDecisions 序列化
   constraints String[] @default([])
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, projectId])
   @@map("project_memories")
@@ -482,10 +507,10 @@ model ProjectMemory {
 model PromptTemplateRecord {
   id        String   @id @default(uuid()) @db.Uuid
   roleCode  String   @map("role_code")
-  layer     String   @map("layer")       // base | task | context | format
-  version   String   @map("version")     // 语义化 "1.0" / "1.1"
+  layer     String   @map("layer") // base | task | context | format
+  version   String   @map("version") // 语义化 "1.0" / "1.1"
   content   String   @map("content")
-  metadata  Json     @map("metadata")    // PromptMetadata 序列化
+  metadata  Json     @map("metadata") // PromptMetadata 序列化
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
 

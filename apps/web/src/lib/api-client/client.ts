@@ -12,10 +12,7 @@ export interface RecommendedRole {
   removable: boolean;
 }
 
-export interface RadarDimension {
-  name: string;
-  score: number;
-}
+export interface RadarDimension { name: string; score: number }
 
 export interface DiagnosisResponse {
   reviewId?: string;
@@ -26,535 +23,153 @@ export interface DiagnosisResponse {
   recommendedRoles: RecommendedRole[];
 }
 
-export interface RoleSelectionInput {
-  roleId: string;
-  weight: number;
-}
+export interface RoleSelectionInput { roleId: string; weight: number; }
+export interface SelectedRole { roleId: string; roleCode: string; roleName: string; weight: number; removable: boolean; }
+export interface RoleSelectionResponse { roles: SelectedRole[]; }
+export interface StartReviewResponse { sessionId: string; status: 'running'; }
 
-export interface SelectedRole {
-  roleId: string;
-  roleCode: string;
-  roleName: string;
-  weight: number;
-  removable: boolean;
-}
-
-export interface RoleSelectionResponse {
-  roles: SelectedRole[];
-}
-
-export interface StartReviewResponse {
-  sessionId: string;
-  status: 'running';
-}
-
-export interface ReportActionItem {
-  title: string;
-  sourceAgent: string;
-  priority: string;
-  status: string;
-}
-
-export interface ReportOpinion {
-  dimension: string;
-  agentCode: string;
-  agentName: string;
-  riskLevel: string;
-  issue: string;
-  recommendation: string;
-  confidenceScore: number;
-}
-
-export interface ReportRisk {
-  title: string;
-  riskLevel: string;
-  sourceAgent: string;
-  dimension: string;
-  description: string;
-}
-
-export interface ReportMetrics {
-  p0RiskCount: number;
-  totalRiskCount: number;
-  adoptionRate: number;
-  durationMinutes: number;
-  totalRoles: number;
-}
-
-export interface ReportLowConfidenceItem {
-  agentCode: string;
-  agentName: string;
-  issue: string;
-  confidenceScore: number;
-}
-
+export interface ReportActionItem { title: string; sourceAgent: string; priority: string; status: string; }
+export interface ReportOpinion { dimension: string; agentCode: string; agentName: string; riskLevel: string; issue: string; recommendation: string; confidenceScore: number; }
+export interface ReportRisk { title: string; riskLevel: string; sourceAgent: string; dimension: string; description: string; }
+export interface ReportMetrics { p0RiskCount: number; totalRiskCount: number; adoptionRate: number; durationMinutes: number; totalRoles: number; }
+export interface ReportLowConfidenceItem { agentCode: string; agentName: string; issue: string; confidenceScore: number; }
 export interface ReportResponse {
-  reviewId?: string;
-  title?: string;
-  objective?: string;
-  status?: string;
-  mode?: string;
-  verdict: string;
-  source: 'db_opinions' | 'mock_fallback';
-  opinionCount: number;
-  generatedFromTurns: boolean;
-  executiveSummary: string;
-  metrics: ReportMetrics;
-  risks: ReportRisk[];
-  opinions: ReportOpinion[];
-  actionItems: ReportActionItem[];
-  lowConfidenceItems: ReportLowConfidenceItem[];
-  providerSummary?: {
-    totalTurns: number;
-    bySource: {
-      mock?: number;
-      lmstudio?: number;
-      openai_compatible?: number;
-      fallback_mock?: number;
-      failed?: number;
-    };
-    fallbackCount: number;
-    failedCount: number;
-    models: string[];
-    hasRealProvider: boolean;
-  };
-}
-
-export interface CreateReviewProviderInput {
-  provider: 'mock' | 'lmstudio' | 'openai_compatible';
-  model?: string;
-  baseUrl?: string;
-  apiKey?: string;
+  reviewId?: string; title?: string; objective?: string; status?: string; mode?: string;
+  verdict: string; source: 'db_opinions' | 'mock_fallback'; opinionCount: number; generatedFromTurns: boolean;
+  executiveSummary: string; metrics: ReportMetrics; risks: ReportRisk[]; opinions: ReportOpinion[];
+  actionItems: ReportActionItem[]; lowConfidenceItems: ReportLowConfidenceItem[];
+  providerSummary?: { totalTurns: number; bySource: Record<string, number>; fallbackCount: number; failedCount: number; models: string[]; hasRealProvider: boolean; };
 }
 
 export interface CreateReviewInput {
-  title: string;
-  objective: string;
-  content?: string;
-  mode?: string;
-  provider?: CreateReviewProviderInput;
+  title: string; objective: string; content?: string; mode?: string;
+  provider?: { provider: 'mock' | 'lmstudio' | 'openai_compatible'; model?: string; baseUrl?: string; apiKey?: string; };
+}
+export interface ReviewResponse { id: string; title: string; status: string; }
+export interface ReviewListItem { id: string; title: string; objective: string; status: string; mode: string; createdAt: string; updatedAt: string; }
+export interface ReviewListResponse { items: ReviewListItem[]; total: number; page: number; limit: number; totalPages: number; offset?: number; }
+export interface GetReviewsParams { status?: string; mode?: string; search?: string; page?: number; limit?: number; offset?: number; }
+
+export interface RoleBrief { id: string; name: string; code: string; activeVersionId: string | null; isPreset: boolean; updatedAt: string; }
+export interface RoleDetail { id: string; name: string; code: string; type?: string; status?: string; departmentId?: string; systemPrompt?: string; dimensions?: string[]; activeVersionId?: string; versions?: { id: string; version: string; dimensions: string[]; createdAt: string }[]; }
+export interface AuditLogItem { id: string; action: string; resource: string; resourceId: string | null; userId: string | null; createdAt: string; detail?: unknown; }
+export interface AuditLogList { items: AuditLogItem[]; total: number; page: number; totalPages: number; }
+export interface KnowledgeDocument { id: string; title: string; status: string; chunkCount: number; createdAt: string; }
+export interface WorkflowPreset { id: string; name: string; description: string; }
+export interface PromptTemplate { id: string; roleCode: string; version: string; layer: 'base' | 'task' | 'context' | 'format'; content: string; metadata?: { description?: string; createdBy?: string; schemaVersion?: string }; createdAt: string; }
+
+const auth = { Authorization: `Bearer ${API_AUTH_TOKEN}` };
+function err(msg: string, e: unknown): Error {
+  if (isAxiosError(e)) return new Error(`${msg}: ${e.response?.data?.message || e.message}`);
+  return new Error(e instanceof Error ? `${msg}: ${e.message}` : `${msg}.`);
 }
 
-export interface ReviewResponse {
-  id: string;
-  title: string;
-  status: string;
-}
-
-export interface ReviewListItem {
-  id: string;
-  title: string;
-  objective: string;
-  status: string;
-  mode: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ReviewListResponse {
-  items: ReviewListItem[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-  /** Backward-compatible offset (derived from page on the server). */
-  offset?: number;
-}
-
-export interface GetReviewsParams {
-  status?: string;
-  mode?: string;
-  search?: string;
-  page?: number;
-  limit?: number;
-  offset?: number;
-}
-
-// Real API client connecting to backend
 export const apiClient = {
-  getReviews: async (params?: GetReviewsParams): Promise<ReviewListResponse> => {
-    try {
-      const response = await axios.get<ReviewListResponse>(`${API_BASE_URL}/reviews`, {
-        params,
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        throw new Error(`获取评审列表失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `获取评审列表失败: ${error.message}` : "获取评审列表失败。");
-    }
+  getReviews: async (p?: GetReviewsParams): Promise<ReviewListResponse> => {
+    try { return (await axios.get<ReviewListResponse>(`${API_BASE_URL}/reviews`, { params: p, headers: auth })).data; }
+    catch (e: unknown) { throw err('获取评审列表失败', e); }
   },
   createReview: async (payload: CreateReviewInput): Promise<ReviewResponse> => {
-    try {
-      const response = await axios.post<ReviewResponse>(`${API_BASE_URL}/reviews`, payload, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        throw new Error(`创建评审失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `创建评审失败: ${error.message}` : "创建评审失败。");
-    }
+    try { return (await axios.post<ReviewResponse>(`${API_BASE_URL}/reviews`, payload, { headers: auth })).data; }
+    catch (e: unknown) { throw err('创建评审失败', e); }
   },
-
   createDiagnosis: async (reviewId: string): Promise<void> => {
-    try {
-      await axios.post(`${API_BASE_URL}/reviews/${reviewId}/diagnose`, {}, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        throw new Error(`请求诊断失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `请求诊断失败: ${error.message}` : "请求诊断失败。");
-    }
+    try { await axios.post(`${API_BASE_URL}/reviews/${reviewId}/diagnose`, {}, { headers: auth }); }
+    catch (e: unknown) { throw err('请求诊断失败', e); }
   },
-
   getDiagnosis: async (reviewId: string): Promise<DiagnosisResponse | null> => {
-    try {
-      const response = await axios.get<DiagnosisResponse | null>(`${API_BASE_URL}/reviews/${reviewId}/diagnosis`, {
-        headers: {
-          'Authorization': `Bearer ${API_AUTH_TOKEN}`
-        }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        if (error.response?.status === 404) {
-          throw new Error(`未找到该评审信息 (404): ${error.response?.data?.message || '评审 ID 无效或不存在。'}`);
-        }
-        throw new Error(`获取诊断结果失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `获取诊断结果失败: ${error.message}` : "获取诊断结果失败。");
+    try { return (await axios.get<DiagnosisResponse | null>(`${API_BASE_URL}/reviews/${reviewId}/diagnosis`, { headers: auth })).data; }
+    catch (e: unknown) {
+      if (isAxiosError(e) && e.response?.status === 404) throw new Error(`未找到该评审信息 (404): ${e.response?.data?.message || '评审 ID 无效或不存在。'}`);
+      throw err('获取诊断结果失败', e);
     }
   },
-
   saveRoleSelection: async (reviewId: string, roles: RoleSelectionInput[]): Promise<RoleSelectionResponse> => {
-    try {
-      const response = await axios.post<RoleSelectionResponse>(`${API_BASE_URL}/reviews/${reviewId}/roles`, { roles }, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        throw new Error(`保存评审团失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `保存评审团失败: ${error.message}` : "保存评审团失败。");
-    }
+    try { return (await axios.post<RoleSelectionResponse>(`${API_BASE_URL}/reviews/${reviewId}/roles`, { roles }, { headers: auth })).data; }
+    catch (e: unknown) { throw err('保存评审团失败', e); }
   },
-
   startReview: async (reviewId: string): Promise<StartReviewResponse> => {
-    try {
-      const response = await axios.post<StartReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/start`, {}, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        throw new Error(`启动评审失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `启动评审失败: ${error.message}` : "启动评审失败。");
-    }
+    try { return (await axios.post<StartReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/start`, {}, { headers: auth })).data; }
+    catch (e: unknown) { throw err('启动评审失败', e); }
   },
-
   getReport: async (reviewId: string): Promise<ReportResponse> => {
-    try {
-      const response = await axios.get<ReportResponse>(`${API_BASE_URL}/reviews/${reviewId}/report`, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        if (error.response?.status === 404) {
-          throw new Error(`未找到报告 (404): ${error.response?.data?.message || '评审可能尚未完成，或评审 ID 无效'}`);
-        }
-        throw new Error(`获取报告失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `获取报告失败: ${error.message}` : "获取报告失败。");
+    try { return (await axios.get<ReportResponse>(`${API_BASE_URL}/reviews/${reviewId}/report`, { headers: auth })).data; }
+    catch (e: unknown) {
+      if (isAxiosError(e) && e.response?.status === 404) throw new Error(`未找到报告 (404): ${e.response?.data?.message || '评审可能尚未完成，或评审 ID 无效'}`);
+      throw err('获取报告失败', e);
     }
   },
-
   getReview: async (reviewId: string): Promise<ReviewResponse> => {
-    try {
-      const response = await axios.get<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}`, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        if (error.response?.status === 404) {
-          throw new Error("未找到该评审信息 (404)。请检查评审 ID 是否正确。");
-        }
-        if (error.response?.status === 400) {
-          throw new Error("无效的请求 (400)。请检查请求参数。");
-        }
-        throw new Error(`获取评审详情失败: ${error.response?.data?.message || error.message}`);
+    try { return (await axios.get<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}`, { headers: auth })).data; }
+    catch (e: unknown) {
+      if (isAxiosError(e)) {
+        if (e.response?.status === 404) throw new Error("未找到该评审信息 (404)。请检查评审 ID 是否正确。");
+        if (e.response?.status === 400) throw new Error("无效的请求 (400)。请检查请求参数。");
       }
-      throw new Error(error instanceof Error ? `获取评审详情失败: ${error.message}` : "获取评审详情失败。");
+      throw err('获取评审详情失败', e);
     }
   },
-
   exportReportMarkdown: async (reviewId: string): Promise<void> => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/reviews/${reviewId}/report/export.md`, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` },
-        responseType: 'blob'
-      });
-
+      const response = await axios.get(`${API_BASE_URL}/reviews/${reviewId}/report/export.md`, { headers: auth, responseType: 'blob' });
       let filename = `prismreview-${reviewId}.md`;
       const disposition = response.headers['content-disposition'];
       if (disposition && disposition.indexOf('filename=') !== -1) {
         const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
-        if (matches != null && matches[1]) {
-          filename = matches[1].replace(/['"]/g, '');
-        }
+        if (matches != null && matches[1]) filename = matches[1].replace(/['"]/g, '');
       }
-
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        throw new Error(`导出 Markdown 失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `导出 Markdown 失败: ${error.message}` : "导出 Markdown 失败。");
-    }
+      link.href = url; link.setAttribute('download', filename);
+      document.body.appendChild(link); link.click();
+      document.body.removeChild(link); window.URL.revokeObjectURL(url);
+    } catch (e: unknown) { throw err('导出 Markdown 失败', e); }
   },
-
   archiveReview: async (reviewId: string): Promise<ReviewResponse> => {
-    try {
-      const response = await axios.patch<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/archive`, {}, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        throw new Error(`归档评审失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `归档评审失败: ${error.message}` : "归档评审失败。");
-    }
+    try { return (await axios.patch<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/archive`, {}, { headers: auth })).data; }
+    catch (e: unknown) { throw err('归档评审失败', e); }
   },
-
   unarchiveReview: async (reviewId: string): Promise<ReviewResponse> => {
-    try {
-      const response = await axios.patch<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/unarchive`, {}, {
-        headers: { 'Authorization': `Bearer ${API_AUTH_TOKEN}` }
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) {
-        throw new Error(`取消归档失败: ${error.response?.data?.message || error.message}`);
-      }
-      throw new Error(error instanceof Error ? `取消归档失败: ${error.message}` : "取消归档失败。");
-    }
+    try { return (await axios.patch<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/unarchive`, {}, { headers: auth })).data; }
+    catch (e: unknown) { throw err('取消归档失败', e); }
   },
-
-  // ── HITL + meeting helpers (used by Meeting page v2) ──────────────────────
   interruptReview: async (reviewId: string): Promise<ReviewResponse> => {
-    try {
-      const response = await axios.post<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/interrupt`, {}, {
-        headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) throw new Error(`中断评审失败: ${error.response?.data?.message || error.message}`);
-      throw new Error(error instanceof Error ? `中断评审失败: ${error.message}` : '中断评审失败。');
-    }
+    try { return (await axios.post<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/interrupt`, {}, { headers: auth })).data; }
+    catch (e: unknown) { throw err('中断评审失败', e); }
   },
   resumeReview: async (reviewId: string): Promise<ReviewResponse> => {
-    try {
-      const response = await axios.post<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/resume`, {}, {
-        headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-      });
-      return response.data;
-    } catch (error: unknown) {
-      if (isAxiosError(error)) throw new Error(`恢复评审失败: ${error.response?.data?.message || error.message}`);
-      throw new Error(error instanceof Error ? `恢复评审失败: ${error.message}` : '恢复评审失败。');
-    }
+    try { return (await axios.post<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/resume`, {}, { headers: auth })).data; }
+    catch (e: unknown) { throw err('恢复评审失败', e); }
   },
-  submitHumanTurn: async (
-    reviewId: string,
-    payload: { roleCode: string; dimension: string; issue: string; recommendation: string; riskLevel?: string },
-  ): Promise<void> => {
-    try {
-      await axios.post(`${API_BASE_URL}/reviews/${reviewId}/meetings`, payload, {
-        headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-      });
-    } catch (error: unknown) {
-      if (isAxiosError(error)) throw new Error(`提交人工意见失败: ${error.response?.data?.message || error.message}`);
-      throw new Error(error instanceof Error ? `提交人工意见失败: ${error.message}` : '提交人工意见失败。');
-    }
-  },
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Module API clients — mirror controllers not yet surfaced in the old demo SPA.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export interface RoleBrief {
-  id: string;
-  name: string;
-  code: string;
-  activeVersionId: string | null;
-  isPreset: boolean;
-  updatedAt: string;
-}
-
-export interface AuditLogItem {
-  id: string;
-  action: string;
-  resource: string;
-  resourceId: string | null;
-  userId: string | null;
-  createdAt: string;
-  detail?: unknown;
-}
-
-export interface AuditLogList {
-  items: AuditLogItem[];
-  total: number;
-  page: number;
-  totalPages: number;
-}
-
-export interface KnowledgeDocument {
-  id: string;
-  title: string;
-  status: string;
-  chunkCount: number;
-  createdAt: string;
-}
-
-export interface WorkflowPreset {
-  id: string;
-  name: string;
-  description: string;
-}
-
-export interface RoleDetail {
-  id: string;
-  name: string;
-  code: string;
-  type?: string;
-  status?: string;
-  departmentId?: string;
-  systemPrompt?: string;
-  dimensions?: string[];
-  activeVersionId?: string;
-  versions?: { id: string; version: string; dimensions: string[]; createdAt: string }[];
-}
-
-export interface PromptTemplate {
-  id: string;
-  roleCode: string;
-  version: string;
-  layer: 'base' | 'task' | 'context' | 'format';
-  content: string;
-  metadata?: { description?: string; createdBy?: string; schemaVersion?: string };
-  createdAt: string;
-}
-
-/** Thin wrappers around the controllers the demo didn't call. */
-export const moduleClient = {
-  // ── Roles ─────────────────────────────────────────────────────────────────
-  listRoles: async (): Promise<RoleBrief[]> => {
-    const { data } = await axios.get<RoleBrief[]>(`${API_BASE_URL}/roles`, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-  getRole: async (roleId: string): Promise<RoleDetail> => {
-    const { data } = await axios.get<RoleDetail>(`${API_BASE_URL}/roles/${roleId}`, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-  createRole: async (payload: { name: string; code: string; systemPrompt?: string; dimensions?: string[] }): Promise<RoleDetail> => {
-    const { data } = await axios.post<RoleDetail>(`${API_BASE_URL}/roles`, payload, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-  updateRole: async (roleId: string, payload: { name?: string; code?: string; systemPrompt?: string; dimensions?: string[] }): Promise<RoleDetail> => {
-    const { data } = await axios.patch<RoleDetail>(`${API_BASE_URL}/roles/${roleId}`, payload, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-  disableRole: async (roleId: string): Promise<void> => {
-    await axios.post(`${API_BASE_URL}/roles/${roleId}/disable`, {}, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-  },
-  deleteRole: async (roleId: string): Promise<void> => {
-    await axios.delete(`${API_BASE_URL}/roles/${roleId}`, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
+  submitHumanTurn: async (reviewId: string, payload: { roleCode: string; dimension: string; issue: string; recommendation: string; riskLevel?: string }): Promise<void> => {
+    try { await axios.post(`${API_BASE_URL}/reviews/${reviewId}/meetings`, payload, { headers: auth }); }
+    catch (e: unknown) { throw err('提交人工意见失败', e); }
   },
 
-  listAuditLogs: async (params?: { action?: string; resource?: string; page?: number; limit?: number }): Promise<AuditLogList> => {
-    const { data } = await axios.get<AuditLogList>(`${API_BASE_URL}/audit/logs`, {
-      params,
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
+  // ── Roles ─────────────────────────────────────────────────────────────
+  listRoles: async (): Promise<RoleBrief[]> => { try { return (await axios.get<RoleBrief[]>(`${API_BASE_URL}/roles`, { headers: auth })).data; } catch (e: unknown) { throw err('获取角色列表失败', e); } },
+  getRole: async (id: string): Promise<RoleDetail> => { try { return (await axios.get<RoleDetail>(`${API_BASE_URL}/roles/${id}`, { headers: auth })).data; } catch (e: unknown) { throw err('获取角色详情失败', e); } },
+  createRole: async (p: { name: string; code: string; systemPrompt?: string; dimensions?: string[] }): Promise<RoleDetail> => { try { return (await axios.post<RoleDetail>(`${API_BASE_URL}/roles`, p, { headers: auth })).data; } catch (e: unknown) { throw err('创建角色失败', e); } },
+  updateRole: async (id: string, p: Partial<{ name: string; code: string; systemPrompt: string; dimensions: string[] }>): Promise<RoleDetail> => { try { return (await axios.patch<RoleDetail>(`${API_BASE_URL}/roles/${id}`, p, { headers: auth })).data; } catch (e: unknown) { throw err('更新角色失败', e); } },
+  disableRole: async (id: string): Promise<void> => { try { await axios.post(`${API_BASE_URL}/roles/${id}/disable`, {}, { headers: auth }); } catch (e: unknown) { throw err('停用角色失败', e); } },
+  deleteRole: async (id: string): Promise<void> => { try { await axios.delete(`${API_BASE_URL}/roles/${id}`, { headers: auth }); } catch (e: unknown) { throw err('删除角色失败', e); } },
 
-  listKnowledge: async (): Promise<KnowledgeDocument[]> => {
-    const { data } = await axios.get<KnowledgeDocument[]>(`${API_BASE_URL}/knowledge/documents`, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
+  // ── Audit / Knowledge / Workflows / Prompts ─────────────────────────
+  listAuditLogs: async (p?: { action?: string; resource?: string; page?: number; limit?: number }): Promise<AuditLogList> => { try { return (await axios.get<AuditLogList>(`${API_BASE_URL}/audit/logs`, { params: p, headers: auth })).data; } catch (e: unknown) { throw err('获取审计日志失败', e); } },
+  listKnowledge: async (): Promise<KnowledgeDocument[]> => { try { return (await axios.get<KnowledgeDocument[]>(`${API_BASE_URL}/knowledge/documents`, { headers: auth })).data; } catch (e: unknown) { throw err('获取知识库失败', e); } },
+  uploadKnowledge: async (p: { title: string; content: string; mimeType?: string }): Promise<KnowledgeDocument> => { try { return (await axios.post<KnowledgeDocument>(`${API_BASE_URL}/knowledge/documents`, p, { headers: auth })).data; } catch (e: unknown) { throw err('上传文档失败', e); } },
+  listWorkflows: async (): Promise<WorkflowPreset[]> => { try { return (await axios.get<WorkflowPreset[]>(`${API_BASE_URL}/workflows`, { headers: auth })).data; } catch (e: unknown) { throw err('获取 Workflow 失败', e); } },
+  listPrompts: async (p?: { roleCode?: string; layer?: string }): Promise<PromptTemplate[]> => { try { return (await axios.get<PromptTemplate[]>(`${API_BASE_URL}/prompts`, { params: p, headers: auth })).data; } catch (e: unknown) { throw err('获取 Prompt 模板失败', e); } },
+  registerPrompt: async (p: { roleCode: string; layer: string; content: string; version?: string; description?: string }): Promise<PromptTemplate> => { try { return (await axios.post<PromptTemplate>(`${API_BASE_URL}/prompts`, p, { headers: auth })).data; } catch (e: unknown) { throw err('注册 Prompt 失败', e); } },
+  promptHistory: async (roleCode: string, layer?: string): Promise<PromptTemplate[]> => { try { return (await axios.get<PromptTemplate[]>(`${API_BASE_URL}/prompts/${encodeURIComponent(roleCode)}/history`, { params: layer ? { layer } : undefined, headers: auth })).data; } catch (e: unknown) { throw err('获取 Prompt 历史失败', e); } },
+  rollbackPrompt: async (roleCode: string, layer: string, version: string): Promise<PromptTemplate> => { try { return (await axios.post<PromptTemplate>(`${API_BASE_URL}/prompts/${encodeURIComponent(roleCode)}/rollback`, { layer, version }, { headers: auth })).data; } catch (e: unknown) { throw err('回滚 Prompt 失败', e); } },
 
-  listWorkflows: async (): Promise<WorkflowPreset[]> => {
-    const { data } = await axios.get<WorkflowPreset[]>(`${API_BASE_URL}/workflows`, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-
-  // ── Prompts ─────────────────────────────────────────────────────────────
-  listPrompts: async (params?: { roleCode?: string; layer?: string }): Promise<PromptTemplate[]> => {
-    const { data } = await axios.get<PromptTemplate[]>(`${API_BASE_URL}/prompts`, {
-      params,
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-  registerPrompt: async (payload: { roleCode: string; layer: string; content: string; version?: string; description?: string }): Promise<PromptTemplate> => {
-    const { data } = await axios.post<PromptTemplate>(`${API_BASE_URL}/prompts`, payload, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-  promptHistory: async (roleCode: string, layer?: string): Promise<PromptTemplate[]> => {
-    const { data } = await axios.get<PromptTemplate[]>(`${API_BASE_URL}/prompts/${encodeURIComponent(roleCode)}/history`, {
-      params: layer ? { layer } : undefined,
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-  rollbackPrompt: async (roleCode: string, layer: string, version: string): Promise<PromptTemplate> => {
-    const { data } = await axios.post<PromptTemplate>(`${API_BASE_URL}/prompts/${encodeURIComponent(roleCode)}/rollback`, { layer, version }, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
-
-  // ── Knowledge upload ──────────────────────────────────────────────────────
-  uploadKnowledge: async (payload: { title: string; content: string; mimeType?: string }): Promise<KnowledgeDocument> => {
-    const { data } = await axios.post<KnowledgeDocument>(`${API_BASE_URL}/knowledge/documents`, payload, {
-      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
-    });
-    return data;
-  },
+  // ── LLM Provider Admin ─────────────────────────────────────────────
+  llmStatus: async (): Promise<{ hasActive: boolean; active: any; envConfigured: boolean }> => { try { return (await axios.get(`${API_BASE_URL}/llm-providers/status`, { headers: auth })).data; } catch (e: unknown) { throw err('获取 Provider 状态失败', e); } },
+  llmListProviders: async (): Promise<any[]> => { try { return (await axios.get(`${API_BASE_URL}/llm-providers`, { headers: auth })).data; } catch (e: unknown) { throw err('获取 Provider 列表失败', e); } },
+  llmCreate: async (input: any): Promise<any> => { try { return (await axios.post(`${API_BASE_URL}/llm-providers`, input, { headers: auth })).data; } catch (e: unknown) { throw err('创建 Provider 失败', e); } },
+  llmUpdate: async (id: string, input: any): Promise<any> => { try { return (await axios.patch(`${API_BASE_URL}/llm-providers/${id}`, input, { headers: auth })).data; } catch (e: unknown) { throw err('更新 Provider 失败', e); } },
+  llmDelete: async (id: string): Promise<void> => { try { await axios.delete(`${API_BASE_URL}/llm-providers/${id}`, { headers: auth }); } catch (e: unknown) { throw err('删除 Provider 失败', e); } },
+  llmActivate: async (id: string): Promise<any> => { try { return (await axios.post(`${API_BASE_URL}/llm-providers/${id}/activate`, {}, { headers: auth })).data; } catch (e: unknown) { throw err('激活 Provider 失败', e); } },
+  llmTest: async (id: string): Promise<any> => { try { return (await axios.post(`${API_BASE_URL}/llm-providers/${id}/test`, {}, { headers: auth })).data; } catch (e: unknown) { throw err('测试 Provider 失败', e); } },
 };

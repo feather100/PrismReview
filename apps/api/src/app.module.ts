@@ -17,6 +17,7 @@ import { ToolModule } from './modules/tool/tool.module';
 import { WorkflowModule } from './modules/workflow/workflow.module';
 import { ScoringModule } from './modules/reviews/scoring/scoring.module';
 import { ReportingModule } from './modules/reviews/reporting/reporting.module';
+import { LlmProviderModule } from './modules/llm-provider/llm-provider.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ReportingModule } from './modules/reviews/reporting/reporting.module';
     WorkflowModule,
     ScoringModule,
     ReportingModule,
+    LlmProviderModule,
   ],
   providers: [
     {

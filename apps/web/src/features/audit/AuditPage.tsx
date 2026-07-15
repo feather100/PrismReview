@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Typography, Card, Row, Col, Table, Tag, Input, Space, Alert, Modal, Empty, Spin, Collapse, Button } from 'antd';
 import { AuditOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { moduleClient, AuditLogItem, AuditLogList } from '../../lib/api-client/client';
+import { apiClient, AuditLogItem, AuditLogList } from '../../lib/api-client/client';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -28,7 +28,7 @@ export default function AuditPage() {
     setLoading(true);
     setError(null);
     try {
-      setData(await moduleClient.listAuditLogs({ page: p, limit: 20, resource: resourceFilter }));
+      setData(await apiClient.listAuditLogs({ page: p, limit: 20, resource: resourceFilter }));
     } catch (e: any) {
       setError(e.message ?? '加载审计日志失败');
     } finally {

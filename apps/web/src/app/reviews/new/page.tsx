@@ -2,17 +2,20 @@
 import React, { useEffect, useState } from 'react';
 import { Typography, Form, Input, Button, Card, Select, message, Space, Radio, Alert, Divider, Tooltip, Tag } from 'antd';
 import { useRouter } from 'next/navigation';
-import { apiClient, CreateReviewProviderInput, WorkflowPreset } from '../../../lib/api-client/client';
+import { apiClient, WorkflowPreset } from '../../../lib/api-client/client';
 
 const { Title, Paragraph } = Typography;
 
-const PROVIDERS: { value: CreateReviewProviderInput['provider']; label: string; desc: string }[] = [
+type ProviderType = 'mock' | 'lmstudio' | 'openai_compatible';
+interface ProviderConfig { provider: ProviderType; model?: string; baseUrl?: string; apiKey?: string; }
+
+const PROVIDERS: { value: ProviderType; label: string; desc: string }[] = [
   { value: 'mock', label: 'Mock（默认）', desc: '零成本、零配置，专家意见由内置规则生成，适合演示与流程打通' },
   { value: 'lmstudio', label: 'LM Studio（本地）', desc: '调用本地 LM Studio（默认 127.0.0.1:1234，Gemma-4）' },
   { value: 'openai_compatible', label: 'LongCat-2.0（云端）', desc: '调用 LongCat-2.0 兼容 OpenAI 协议，需要 Base URL + API Key' },
 ];
 
-const LLM_FIELDS: Record<string, { showModel: boolean; showBaseUrl: boolean; showKey: boolean; defaultModel: string; defaultBaseUrl: string; keyRequired: boolean }> = {
+const LLM_FIELDS: Record<ProviderType, { showModel: boolean; showBaseUrl: boolean; showKey: boolean; defaultModel: string; defaultBaseUrl: string; keyRequired: boolean }> = {
   mock: { showModel: false, showBaseUrl: false, showKey: false, defaultModel: '', defaultBaseUrl: '', keyRequired: false },
   lmstudio: { showModel: true, showBaseUrl: false, showKey: false, defaultModel: 'google/gemma-4-12b', defaultBaseUrl: 'http://127.0.0.1:1234/v1', keyRequired: false },
   openai_compatible: { showModel: true, showBaseUrl: true, showKey: true, defaultModel: 'LongCat-2.0', defaultBaseUrl: 'https://api.longcat.chat/openai/v1', keyRequired: true },
@@ -21,26 +24,16 @@ const LLM_FIELDS: Record<string, { showModel: boolean; showBaseUrl: boolean; sho
 const MAX_CONTENT_CHARS = 20000;
 
 export default function NewReviewPage() {
-  const [form] = Form.useForm<{
-    title: string; objective: string; content: string; mode: string;
-    provider: CreateReviewProviderInput['provider'];
-    model?: string; baseUrl?: string; apiKey?: string;
-  }>();
+  const [form] = Form.useForm<{ title: string; objective: string; content: string; mode: string; provider: ProviderType; model?: string; baseUrl?: string; apiKey?: string; }>();
   const [loading, setLoading] = useState(false);
-  const [provider, setProvider] = useState<CreateReviewProviderInput['provider']>('mock');
+  const [provider, setProvider] = useState<ProviderType>('mock');
   const [workflows, setWorkflows] = useState<WorkflowPreset[]>([]);
   const [availProviders, setAvailProviders] = useState<Record<string, boolean>>({ mock: true, lmstudio: true, openai_compatible: true });
   const router = useRouter();
 
   // 拉取可用 workflow
   useEffect(() => {
-    const init = async () => {
-      try {
-        const m = await import('../../../lib/api-client/client');
-        setWorkflows(await m.moduleClient.listWorkflows());
-      } catch { /* ignore */ }
-    };
-    init();
+    apiClient.listWorkflows().then(setWorkflows).catch(() => {});
   }, []);
 
   const meta = LLM_FIELDS[provider];

@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import { PlusOutlined, CopyOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { moduleClient, RoleBrief } from '../../lib/api-client/client';
+import { apiClient, RoleBrief } from '../../lib/api-client/client';
 import { getRoleDisplayName } from '../../lib/i18n/role-mapper';
 
 const { Title, Text, Paragraph } = Typography;
@@ -24,7 +24,7 @@ export default function RolesPage() {
     setLoading(true);
     setError(null);
     try {
-      setRoles(await moduleClient.listRoles());
+      setRoles(await apiClient.listRoles());
     } catch (e: any) {
       setError(e.message ?? '加载评审团失败');
     } finally {

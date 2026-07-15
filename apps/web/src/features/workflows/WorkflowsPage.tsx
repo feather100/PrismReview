@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Typography, Card, Row, Col, Tag, Button, Space, Alert, Empty, Spin } from 'antd';
 import { ExperimentOutlined } from '@ant-design/icons';
-import { moduleClient, WorkflowPreset } from '../../lib/api-client/client';
+import { apiClient, WorkflowPreset } from '../../lib/api-client/client';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -22,7 +22,7 @@ export default function WorkflowsPage() {
     setLoading(true);
     setError(null);
     try {
-      setWfs(await moduleClient.listWorkflows());
+      setWfs(await apiClient.listWorkflows());
     } catch (e: any) {
       setError(e.message ?? '加载 Workflow 失败');
     } finally {

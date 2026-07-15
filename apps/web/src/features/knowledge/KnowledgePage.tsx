@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import { PlusOutlined, ExperimentOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { moduleClient, KnowledgeDocument } from '../../lib/api-client/client';
+import { apiClient, KnowledgeDocument } from '../../lib/api-client/client';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -21,7 +21,7 @@ export default function KnowledgePage() {
     setLoading(true);
     setError(null);
     try {
-      setDocs(await moduleClient.listKnowledge());
+      setDocs(await apiClient.listKnowledge());
     } catch (e: any) {
       setError(e.message ?? '加载知识库失败');
     } finally {

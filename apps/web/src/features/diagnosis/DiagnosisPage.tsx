@@ -106,7 +106,7 @@ export default function DiagnosisPage({ reviewId }: { reviewId: string }) {
   // 动态 import 避免循环依赖
   async function module_import_listRoles() {
     const m = await import('../../lib/api-client/client');
-    return m.moduleClient.listRoles();
+    return m.apiClient.listRoles();
   }
 
   const handleDiagnose = async () => {
