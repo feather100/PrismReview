@@ -30,12 +30,13 @@
 - 🗣️ **多轮辩论（Multi-Round Debate）** — 多个专家 Agent 跨轮次交锋，由 Moderator 逼近共识，而非一次性问答。
 - 🕸️ **graph 编排脊柱（Graph Orchestration Spine）** — 9 值状态机 + checkpoint/resume + 条件路由，崩了能从最近节点续跑。
 - 🤖 **真 LLM Moderator（env-gated）** — 支持 LongCat-2.0 / LM Studio / OpenAI 兼容协议；失败自动降级 mock。
-- 🔧 **MCP 工具层（预留）** — 工具仅经 MCP 协议；A2A 反模式禁止（专家不互联）。
+- 🔐 **加密的 Provider-Key-Management** — AES-256-GCM at-rest-Verschlüsselung；Keys werden nie geloggt/nie in Responses gezeigt；UI-Maske `sk-L••••5678`
+- 🛠️ **Provider Admin UI** — Laufzeit-CRUD für LLM-Provider unter `/admin`；Verbindungstest mit Latenz；einfaches Aktivieren/Deaktivieren
+- 🚀 **Setup-Wizard** — Erstkonfiguration in 3 Schritten (Provider wählen → konfigurieren → Verbindung testen)
 - 🔒 **RBAC + 审计** — 4 级平台角色（super_admin / enterprise_admin / department_admin / user）+ 全链路审计日志。
 - 📊 **加权多维评分（Weighted Scoring）** — 4 种预设 workflow 驱动不同维度权重；评分快照落库可审计。
 - 🧠 **蒸馏式 Memory** — Reviewer/Project 蒸馏 profile（非聊天历史）+ 多轮 rolling summary 压缩。
 - 📝 **版本化 Prompt** — 4 层组装（base/task/context/format）+ 版本注册表 + 回滚。
-- 🚀 **一键可跑（Zero-Config Mock）** — `docker compose up` + `pnpm dev` 即起，默认 mock provider，无需任何模型 API Key。
 - 📄 **Markdown 导出（Markdown Export）** — 正式评审报告一键导出，含评分小节。
 - 🔍 **来源可观测（Provenance Observability）** — `providerSummary` 五态来源追踪：`mock / lmstudio / openai_compatible / fallback_mock / failed`。
 - 🛡️ **硬闸兜底（Hard-Gate Guardrails）** — `max_rounds` / `max_turns_per_reviewer` 收敛硬闸，杜绝无限讨论。
