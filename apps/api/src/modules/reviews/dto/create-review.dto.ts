@@ -1,4 +1,20 @@
-import { IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsObject, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+/**
+ * Per-review provider override（产品化）。
+ * 不传 → 走全局 env 默认（mock）；传了 → 该 review 用指定 provider 跑真实 LLM。
+ * apiKey 仅写入 DB providerConfig，绝不返回给前端、绝不打印日志。
+ */
+export class ProviderOverrideDto {
+  @IsEnum(['mock', 'lmstudio', 'openai_compatible']) provider: string;
+
+  @IsOptional() @IsString() model?: string;
+
+  @IsOptional() @IsString() baseUrl?: string;
+
+  @IsOptional() @IsString() apiKey?: string;
+}
 
 /**
  * CreateReview.mode 枚举（Contract §3.5）：
@@ -15,4 +31,10 @@ export class CreateReviewDto {
   @IsOptional()
   @IsEnum(['enterprise', 'code-review', 'research', 'thesis', 'round_robin', 'free_debate'])
   mode?: string;
+
+  // 产品化：每 review 可选覆盖 LLM provider（mock / lmstudio / openai_compatible）
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ProviderOverrideDto)
+  provider?: ProviderOverrideDto;
 }

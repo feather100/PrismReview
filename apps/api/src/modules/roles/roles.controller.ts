@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Param, Query, Delete, ParseUUIDPipe, UseInterceptors, ClassSerializerInterceptor } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Delete, Patch, ParseUUIDPipe, UseInterceptors, ClassSerializerInterceptor } from '@nestjs/common';
 import { RolesService } from './roles.service';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
 import { RoleBriefDto, RoleDetailDto } from './dto/role-response.dto';
 
 @Controller('roles')
@@ -37,6 +38,17 @@ export class RolesController {
     @Body() dto: CreateRoleDto,
   ): Promise<RoleDetailDto> {
     return this.rolesService.createRole(user.tenantId, user.id, dto);
+  }
+
+  // 产品化：编辑角色元数据（name / code / dimensions / systemPrompt）
+  @Patch(':roleId')
+  @RequirePermissions('role.write')
+  async updateRole(
+    @CurrentUser() user: AuthUser,
+    @Param('roleId', new ParseUUIDPipe({ version: '4' })) roleId: string,
+    @Body() dto: UpdateRoleDto,
+  ): Promise<RoleDetailDto> {
+    return this.rolesService.updateRole(user.tenantId, roleId, dto, user.id);
   }
 
   @Post(':roleId/versions')

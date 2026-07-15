@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
 import { RoleBriefDto, RoleDetailDto } from './dto/role-response.dto';
 
 @Injectable()
@@ -142,6 +143,30 @@ export class RolesService {
     });
 
     return this.getRole(tenantId, roleId);
+  }
+
+  // 产品化：编辑角色元数据（name / code / dimensions / systemPrompt）。
+  // 不改 type / status（由 disable/enable 单独控制）；编辑不改版本内容，
+  // 版本内容由 createVersion 管理。
+  async updateRole(tenantId: string, roleId: string, dto: UpdateRoleDto, userId: string): Promise<RoleDetailDto> {
+    const role = await this.prisma.agentRole.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) throw new NotFoundException('Role not found');
+
+    const data: any = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.code !== undefined) data.code = dto.code;
+    if (dto.dimensions !== undefined) data.dimensions = dto.dimensions;
+    if (dto.systemPrompt !== undefined) {
+      // 写入 AgentRole.systemPrompt 作为兜底；版本化以 activeVersion 为准
+      data.systemPrompt = dto.systemPrompt;
+    }
+
+    const updated = await this.prisma.agentRole.update({
+      where: { id: roleId },
+      data,
+      include: { versions: { orderBy: { createdAt: 'desc' } } },
+    });
+    return this.toDetailDto(updated);
   }
 
   async disableRole(tenantId: string, roleId: string): Promise<void> {

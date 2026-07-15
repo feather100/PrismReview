@@ -67,6 +67,16 @@ export class ReviewsService {
   }
 
   async createReview(dto: CreateReviewDto, user: any): Promise<ReviewResponseDto> {
+    // 产品化：per-review provider override（可选）。apiKey 仅写入 DB，绝不外泄。
+    const providerOverride: string | undefined = dto.provider?.provider;
+    const providerConfig: any = (dto.provider && dto.provider.provider !== 'mock')
+      ? {
+          model: dto.provider.model,
+          baseUrl: dto.provider.baseUrl,
+          apiKey: dto.provider.apiKey,
+        }
+      : undefined;
+
     const review = await this.prisma.review.create({
       data: {
         tenantId: user.tenantId,
@@ -76,6 +86,8 @@ export class ReviewsService {
         inputType: dto.content ? 'both' : 'text',
         mode: dto.mode ?? 'round_robin',
         status: 'created',
+        ...(providerOverride ? { providerOverride } : {}),
+        ...(providerConfig ? { providerConfig } : {}),
       },
     });
     return this.toResponseDto(review);

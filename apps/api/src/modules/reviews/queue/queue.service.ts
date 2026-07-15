@@ -30,9 +30,36 @@ export class QueueService implements OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   private processedIds = new Set<string>();  // Idempotency tracking
 
-  // Sprint 2.1: unified model adapter (default = mock via factory; external
-  // providers only when ALLOW_EXTERNAL_MODEL_CALLS=true + explicit env).
-  private readonly modelAdapter: ModelAdapter = createProviderAdapter();
+  // Sprint 2.1: unified model adapter. Default: global (mock via factory,
+  // external only when ALLOW_EXTERNAL_MODEL_CALLS=true + explicit env).
+  // Per-review override: 当 review 行带了 providerOverride + providerConfig 时，
+  // 按 review 配置构造独立 adapter（DB 里的 Config 优先，env 兜底）。
+  // Never logs nor leaks providerConfig.apiKey.
+  private readonly defaultAdapter: ModelAdapter = createProviderAdapter();
+
+  /**
+   * 返回本次 turn 应使用的 ModelAdapter：
+   *   1. 若 job payload 没带 providerOverride → 用全局 defaultAdapter
+   *   2. 带了 → 构造独立 adapter（env 兜底 + config 覆盖，不污染全局）
+   * apiKey 在任何 log / observability / providerSource 中都不出现。
+   */
+  private async resolveAdapter(payload: any): Promise<ModelAdapter> {
+    const override: string | undefined = payload?.providerOverride;
+    const cfg: any = payload?.providerConfig;
+    if (!override) return this.defaultAdapter;
+    // 合并 env 兜底 + DB config 覆盖；apiKey 仅此处拼入，绝不落日志
+    const env: any = {
+      MODEL_PROVIDER: override,
+      ALLOW_EXTERNAL_MODEL_CALLS: 'true',
+    };
+    if (cfg?.model) env.MODEL_NAME = cfg.model;
+    if (cfg?.baseUrl) env.MODEL_BASE_URL = cfg.baseUrl;
+    if (override === 'lmstudio' || override === 'openai_compatible') {
+      if (cfg?.apiKey) env.MODEL_API_KEY = cfg.apiKey;
+      else if (process.env.MODEL_API_KEY) env.MODEL_API_KEY = process.env.MODEL_API_KEY;
+    }
+    return createProviderAdapter(env);
+  }
 
   /**
    * 完成回调钩子（由 ReviewOrchestrator 在 onModuleInit 注入）。
@@ -212,6 +239,9 @@ export class QueueService implements OnModuleDestroy {
         round, // P2-1：贯通到 turn 执行，供 reviewTurn.round 写入 + 语义元组幂等
         // 9.5b：round>=2 的辩论轮标记为 debate phase（mock debater，Contract §10）；P5 由 workflow pattern 覆盖
         phase: phaseFromPattern === 'debate' ? 'debate' : 'round_robin',
+        // 产品化：每 review 可覆盖 provider / model / apiKey（DB 优先，env 兜底）
+        providerOverride: review.providerOverride || undefined,
+        providerConfig: review.providerConfig || undefined,
       }, jobId);
     }
   }
@@ -297,9 +327,8 @@ export class QueueService implements OnModuleDestroy {
     });
 
     // Execute provider via unified ModelAdapter abstraction (Sprint 2.1).
-    // The adapter resolves from env (default = MockAdapter); queue.service no
-    // longer reads provider env vars directly.
-    const adapter: ModelAdapter = this.modelAdapter;
+    // Per-review override: 若 review 行带了 providerOverride，按 review 配置构造独立 adapter。
+    const adapter: ModelAdapter = await this.resolveAdapter(payload);
 
     // P3：PromptService 四层组装（mock 确定性，不调真实 LLM）。失败则降级 SYSTEM_PROMPT。
     let system: string = SYSTEM_PROMPT;

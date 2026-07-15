@@ -120,11 +120,19 @@ export interface ReportResponse {
   };
 }
 
+export interface CreateReviewProviderInput {
+  provider: 'mock' | 'lmstudio' | 'openai_compatible';
+  model?: string;
+  baseUrl?: string;
+  apiKey?: string;
+}
+
 export interface CreateReviewInput {
   title: string;
   objective: string;
   content?: string;
   mode?: string;
+  provider?: CreateReviewProviderInput;
 }
 
 export interface ReviewResponse {
@@ -431,13 +439,65 @@ export interface WorkflowPreset {
   description: string;
 }
 
+export interface RoleDetail {
+  id: string;
+  name: string;
+  code: string;
+  type?: string;
+  status?: string;
+  departmentId?: string;
+  systemPrompt?: string;
+  dimensions?: string[];
+  activeVersionId?: string;
+  versions?: { id: string; version: string; dimensions: string[]; createdAt: string }[];
+}
+
+export interface PromptTemplate {
+  id: string;
+  roleCode: string;
+  version: string;
+  layer: 'base' | 'task' | 'context' | 'format';
+  content: string;
+  metadata?: { description?: string; createdBy?: string; schemaVersion?: string };
+  createdAt: string;
+}
+
 /** Thin wrappers around the controllers the demo didn't call. */
 export const moduleClient = {
+  // ── Roles ─────────────────────────────────────────────────────────────────
   listRoles: async (): Promise<RoleBrief[]> => {
     const { data } = await axios.get<RoleBrief[]>(`${API_BASE_URL}/roles`, {
       headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
     });
     return data;
+  },
+  getRole: async (roleId: string): Promise<RoleDetail> => {
+    const { data } = await axios.get<RoleDetail>(`${API_BASE_URL}/roles/${roleId}`, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+  createRole: async (payload: { name: string; code: string; systemPrompt?: string; dimensions?: string[] }): Promise<RoleDetail> => {
+    const { data } = await axios.post<RoleDetail>(`${API_BASE_URL}/roles`, payload, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+  updateRole: async (roleId: string, payload: { name?: string; code?: string; systemPrompt?: string; dimensions?: string[] }): Promise<RoleDetail> => {
+    const { data } = await axios.patch<RoleDetail>(`${API_BASE_URL}/roles/${roleId}`, payload, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+  disableRole: async (roleId: string): Promise<void> => {
+    await axios.post(`${API_BASE_URL}/roles/${roleId}/disable`, {}, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+  },
+  deleteRole: async (roleId: string): Promise<void> => {
+    await axios.delete(`${API_BASE_URL}/roles/${roleId}`, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
   },
 
   listAuditLogs: async (params?: { action?: string; resource?: string; page?: number; limit?: number }): Promise<AuditLogList> => {
@@ -457,6 +517,42 @@ export const moduleClient = {
 
   listWorkflows: async (): Promise<WorkflowPreset[]> => {
     const { data } = await axios.get<WorkflowPreset[]>(`${API_BASE_URL}/workflows`, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+
+  // ── Prompts ─────────────────────────────────────────────────────────────
+  listPrompts: async (params?: { roleCode?: string; layer?: string }): Promise<PromptTemplate[]> => {
+    const { data } = await axios.get<PromptTemplate[]>(`${API_BASE_URL}/prompts`, {
+      params,
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+  registerPrompt: async (payload: { roleCode: string; layer: string; content: string; version?: string; description?: string }): Promise<PromptTemplate> => {
+    const { data } = await axios.post<PromptTemplate>(`${API_BASE_URL}/prompts`, payload, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+  promptHistory: async (roleCode: string, layer?: string): Promise<PromptTemplate[]> => {
+    const { data } = await axios.get<PromptTemplate[]>(`${API_BASE_URL}/prompts/${encodeURIComponent(roleCode)}/history`, {
+      params: layer ? { layer } : undefined,
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+  rollbackPrompt: async (roleCode: string, layer: string, version: string): Promise<PromptTemplate> => {
+    const { data } = await axios.post<PromptTemplate>(`${API_BASE_URL}/prompts/${encodeURIComponent(roleCode)}/rollback`, { layer, version }, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+
+  // ── Knowledge upload ──────────────────────────────────────────────────────
+  uploadKnowledge: async (payload: { title: string; content: string; mimeType?: string }): Promise<KnowledgeDocument> => {
+    const { data } = await axios.post<KnowledgeDocument>(`${API_BASE_URL}/knowledge/documents`, payload, {
       headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
     });
     return data;

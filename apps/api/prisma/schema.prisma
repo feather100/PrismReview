@@ -184,6 +184,12 @@ model Review {
   // nullable：旧 Review 无快照 → 兼容；评分时由 ScoringService 写入。不新增表（纯 JSON 列）。
   scoringConfig   Json?   @map("scoring_config")
 
+  // --- Productization: per-review provider override (optional; falls back to global env default) ---
+  // providerOverride: "mock" | "lmstudio" | "openai_compatible"
+  // providerConfig:   { model?, baseUrl?, apiKey? } — apiKey 仅落库，绝不打印/返回给前端
+  providerOverride String?  @map("provider_override")
+  providerConfig   Json?    @map("provider_config")
+
   @@index([tenantId, createdBy, status])
   @@map("reviews")
 }
