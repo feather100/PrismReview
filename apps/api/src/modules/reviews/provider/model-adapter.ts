@@ -81,13 +81,59 @@ const MOCK_RESPONSES: Record<
 
 // ── Shared prompt + parsing helpers (used by both adapters + queue.service) ──
 
-export const SYSTEM_PROMPT =
-  'You are an expert architecture reviewer. Read the proposal below and respond with ' +
-  'ONE strict JSON object (no markdown, no commentary, no prose before or after) with EXACTLY these keys: ' +
-  'riskLevel (one of: high|medium|low|info), dimension (string), issue (string), ' +
-  'recommendation (string), confidenceScore (integer 0-100). ' +
-  'IMPORTANT: output the raw JSON object only — do not wrap in ```json fences, ' +
-  'do not add any explanation, do not translate keys into Chinese.';
+/**
+ * SYSTEM_PROMPT — language-aware.
+ *
+ * Détecte la langue du contenu (ratio CJK) et génère un prompt adapté :
+ *   - Contenu majoritairement chinois  → prompt + réponse en CHINOIS
+ *   - Contenu majoritairement latin    → prompt + réponse en ANGLAIS
+ *
+ * Les clés JSON restent toujours en anglais (riskLevel, dimension, …) pour
+ * que le parseur fonctionne ; seul le *texte de réponse* (issue, recommendation,
+ * dimension) et les instructions changent de langue.
+ */
+export function buildSystemPrompt(content: string): string {
+  const isChinese = isLikelyChinese(content);
+  if (isChinese) {
+    return (
+      '你是一名资深架构评审专家。阅读以下方案，并用**中文**回答一个严格的 JSON 对象\n' +
+      '(不要 markdown、不要推理过程、前后不要任何说明文字)。必须**只**包含以下键：\n' +
+      'riskLevel (high|medium|low|info 之一), dimension (字符串，**用中文**), issue (字符串，**用中文**), ' +
+      'recommendation (字符串，**用中文**), confidenceScore (0-100 整数)。\n' +
+      '重要：只输出原始 JSON 节点 —— 不要 ```json 围栏，不要翻译键为英文，' +
+      '所有中文描述使用简体中文。'
+    );
+  }
+  return (
+    'You are an expert architecture reviewer. Read the proposal below and respond with ' +
+    'ONE strict JSON object (no markdown, no commentary, no prose before or after) with EXACTLY these keys: ' +
+    'riskLevel (one of: high|medium|low|info), dimension (string), issue (string), ' +
+    'recommendation (string), confidenceScore (integer 0-100). ' +
+    'IMPORTANT: output the raw JSON object only — do not wrap in ```json fences, ' +
+    'do not add any explanation, do not translate keys into Chinese.'
+  );
+}
+
+/** Heuristique CJK : >15% de caractères CJK → considéré comme chinois. */
+export function isLikelyChinese(text: string): boolean {
+  if (!text) return false;
+  const total = text.length;
+  let cjk = 0;
+  for (let i = 0; i < total; i++) {
+    const code = text.charCodeAt(i);
+    if (
+      (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified Ideographs
+      (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
+      (code >= 0x20000 && code <= 0x2a6df) // CJK Extension B
+    ) {
+      cjk++;
+    }
+  }
+  return total > 0 && cjk / total > 0.15;
+}
+
+/** @deprecated Use buildSystemPrompt(content) instead. Kept for any direct callers. */
+export const SYSTEM_PROMPT = buildSystemPrompt('');
 
 export function stripMarkdown(text: string): string {
   const m = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -158,16 +204,26 @@ export function parseModelOpinion(text: string): any | null {
   return extractBestJsonObject(cleaned);
 }
 
-// ── MockAdapter ──
+// ── English mock seeds (same keys, English text) ──────────────────────────
+
+const MOCK_RESPONSES_EN: Record<string, { dimension: string; riskLevel: string; issue: string; recommendation: string; confidenceScore: number }> = {
+  CTO: { dimension: 'Architecture Soundness', riskLevel: 'high', issue: 'Core link has no circuit-breaker / degradation, single-point-of-failure risk.', recommendation: 'Split into microservices with per-service timeouts, circuit breakers, and HA deployment.', confidenceScore: 78 },
+  CFO: { dimension: 'Cost-Benefit', riskLevel: 'medium', issue: 'High upfront investment, long-term ROI needs phased validation.', recommendation: 'Adopt a phased funding plan and validate core value in phase 1 before full rollout.', confidenceScore: 72 },
+  PMO: { dimension: 'Delivery Risk', riskLevel: 'medium', issue: 'Schedule is tight, critical-path has external dependency risk.', recommendation: 'Add 20% schedule buffer, lock external dependency owners and dates.', confidenceScore: 65 },
+  Compliance: { dimension: 'Security & Compliance', riskLevel: 'high', issue: 'Proposal involves cross-border user data; privacy impact assessment required.', recommendation: 'Classify and grade data, ensure encrypted transit/storage, and put data-access audit in place.', confidenceScore: 80 },
+  UserAdvocate: { dimension: 'User Experience', riskLevel: 'low', issue: 'Learning curve is high; onboarding docs are missing.', recommendation: 'Add a guided onboarding flow and optimise key page load to under 2s.', confidenceScore: 70 },
+};
+
+// ── MockAdapter ──────────────────────────────────────────────────────────
 
 export class MockAdapter implements ModelAdapter {
   readonly name = 'mock';
 
-  constructor(private readonly responses: Record<string, any> = MOCK_RESPONSES) {}
-
   async complete(input: ModelInput): Promise<ModelOutput> {
     const roleCode = extractRoleCode(input.prompt);
-    const base = this.responses[roleCode] || this.responses.CTO;
+    const isZh = isLikelyChinese(input.prompt || '');
+    const table = isZh ? MOCK_RESPONSES : MOCK_RESPONSES_EN;
+    const base = table[roleCode] || table.CTO;
     return {
       text: JSON.stringify(base),
       model: 'mock',

@@ -3,7 +3,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { findExistingTerminalTurn } from '../orchestrator/idempotency';
 import { shouldDispatchTurn, resolveHardGates } from '../orchestrator/hard-gates';
 import { validateOpinion, StructuredOpinion, RiskLevel } from '../orchestrator/opinion';
-import { ModelAdapter, MockAdapter, SYSTEM_PROMPT, parseModelOpinion } from '../provider/model-adapter';
+import { ModelAdapter, MockAdapter, buildSystemPrompt, isLikelyChinese, parseModelOpinion } from '../provider/model-adapter';
 import { createProviderAdapter } from '../provider/provider-factory';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { MemoryServiceImpl, type MemoryService } from '../../memory/memory.service';
@@ -331,7 +331,8 @@ export class QueueService implements OnModuleDestroy {
     const adapter: ModelAdapter = await this.resolveAdapter(payload);
 
     // P3：PromptService 四层组装（mock 确定性，不调真实 LLM）。失败则降级 SYSTEM_PROMPT。
-    let system: string = SYSTEM_PROMPT;
+    // Language-adaptif : construire un system prompt dans la langue du contenu
+    let system: string = buildSystemPrompt(objective || '');
     let promptRefs: any = null;
     if (this.promptService) {
       try {
@@ -349,14 +350,19 @@ export class QueueService implements OnModuleDestroy {
       }
     }
 
-    // user prompt：保留 "You are reviewing as {roleCode}." 前缀（mock 适配器据此提取角色，保证 9.5b 等回归不破）
+    // user prompt — language-aware. Le préfixe "You are reviewing as X." reste
+    // en anglais (le mock adapter extrait le code rôle via regex), mais les
+    // consignes passent en chinois si le contenu est chinois.
+    const isZh = isLikelyChinese(objective || '');
     const prompt = [
       `You are reviewing as ${roleCode}.`,
       '',
-      'Proposal:',
+      isZh ? '方案内容：' : 'Proposal:',
       objective,
       '',
-      'Respond with ONLY a raw JSON object (no markdown, no reasoning, no prose, no ``` fences).',
+      isZh
+        ? '只用原始 JSON 回答（不要 markdown、不要推理过程、不要 ```json 围栏）。'
+        : 'Respond with ONLY a raw JSON object (no markdown, no reasoning, no prose, no ``` fences).',
     ].join('\n');
 
     let result: any;
