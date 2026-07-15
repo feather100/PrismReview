@@ -8,6 +8,14 @@ import { createProviderAdapter } from '../provider/provider-factory';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { MemoryServiceImpl, type MemoryService } from '../../memory/memory.service';
 
+/** Push defense content into prepared prompt (multi-line safe). */
+function pushLinesWithDefense(lines: string[], content: string, isZh: boolean) {
+  const tag = isZh ? '【用户申辩】' : '[USER DEFENSE]';
+  lines.push(`${tag}:`);
+  lines.push(content);
+  lines.push(isZh ? '【/用户申辩】' : '[/USER DEFENSE]');
+}
+
 interface QueueJob {
   id: string;
   type: 'review.start' | 'agent.turn.execute' | 'meeting.complete';
@@ -354,16 +362,34 @@ export class QueueService implements OnModuleDestroy {
     // 语言决策 : 1) review.lang forcé  2) détection auto depuis l'objectif
     const forcedLang = (payload as any).reviewLang as string | undefined;
     const isZh = forcedLang ? forcedLang === 'zh' : isLikelyChinese(objective || '');
-    const prompt = [
+    const defenseCtx = (payload as any).defenseContext as string | undefined;
+    const targetMention = (payload as any).targetMention as string | undefined;
+
+    const promptLines: string[] = [
       `You are reviewing as ${roleCode}.`,
       '',
       isZh ? '方案内容：' : 'Proposal:',
       objective,
-      '',
-      isZh
-        ? '只用原始 JSON 回答（不要 markdown、不要推理过程、不要 ```json 围栏）。'
-        : 'Respond with ONLY a raw JSON object (no markdown, no reasoning, no prose, no ``` fences).',
-    ].join('\n');
+    ];
+    // Contexte de défense (申辩材料) injecté pour le round de ré-évaluation
+    if (defenseCtx) {
+      promptLines.push('');
+      if (isZh) {
+        promptLines.push(`用户针对之前评审的申辩/补充材料${targetMention ? `（针对专家 ${targetMention}）` : ''}：`);
+        pushLinesWithDefense(promptLines, defenseCtx, isZh);
+        promptLines.push('');
+        promptLines.push('请结合用户申辩重新评估，特别关注用户提到的新信息或纠正。');
+      } else {
+        pushLinesWithDefense(promptLines, defenseCtx, isZh);
+        promptLines.push('');
+        promptLines.push('Re-evaluate considering the user defense, especially new info or corrections.');
+      }
+    }
+    promptLines.push('');
+    promptLines.push(isZh
+      ? '只用原始 JSON 回答（不要 markdown、不要推理过程、不要 ```json 围栏）。'
+      : 'Respond with ONLY a raw JSON object (no markdown, no reasoning, no prose, no ``` fences).');
+    const prompt = promptLines.join('\n');
 
     let result: any;
     let observability: any;

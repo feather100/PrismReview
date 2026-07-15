@@ -29,7 +29,13 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const hold: string[] = Array.isArray(user.permissions) ? user.permissions : [];
-    if (!required.some((p) => hold.includes(p))) {
+    // Hiérarchie : review.read.all couvre review.read ; role.write couvre role.read ; etc.
+    const expanded = new Set<string>(hold);
+    for (const p of hold) {
+      const dot = p.lastIndexOf('.');
+      if (dot > 0) expanded.add(p.slice(0, dot)); // parent claim
+    }
+    if (!required.some((p) => expanded.has(p) || hold.includes(p))) {
       throw new ForbiddenException(
         `PERMISSION_DENIED: requires one of [${required.join(', ')}]`,
       );

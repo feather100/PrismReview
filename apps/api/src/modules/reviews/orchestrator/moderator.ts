@@ -113,13 +113,18 @@ export class MockModerator implements Moderator {
 
     // 9.5b round-2 mock debater（Contract §10）：本轮 high-risk 冲突检测。
     // P1 mock 确定性启发式：本轮 ≥2 条 high-risk opinion → 视为存在未决 high-risk 冲突，
-    // 需要进入 round-2 debate 深挖（"存在 riskLevel=high 的冲突意见 → continue_debate"）。
+    // 需要进入 round-2 debate 深挖（"存在 riskLevel=high → 的冲突意见 continue_debate"）。
     const conflictCount = await this.detectConflict(state.reviewId, round);
     const conflict = conflictCount >= 2;
+    const defenseCount = state.defenseCount ?? 0;
 
     // 多轮脊柱：默认 converge → completed；冲突则 continue_debate → round-2；到顶则 force_stop。
     let decisionType: ModeratorDecisionType = 'converge';
     let reasoning = `round-${round} summarized: reviewers spoke, no conflict → converge to completed`;
+
+    // @expert mention — if user @mentioned an expert, prioritize asking for defense first
+    const mentionedExpert = (state as any).mentionExpertCode;
+    const wantDefense = defenseCount < 2 && !conflict && !!mentionedExpert;
 
     // 硬闸强停覆盖（达上限 / 越界 → aborted）
     if (!maxRoundsOk || !maxTokensOk || !maxCostOk) {
@@ -148,6 +153,10 @@ export class MockModerator implements Moderator {
     } else if (conflict) {
       // 冲突存在但未达 debateAfterRound：本轮不进 debate（留待后续轮次），按默认 converge/advance 处理
       reasoning = `round-${round}: conflict detected but round < debateAfterRound=${config?.debateAfterRound ?? 'N/A'} → debate deferred`;
+    } else if (wantDefense) {
+      // @expert mentionné → demander à l'utilisateur de défendre / compléter
+      decisionType = 'ask_user_defense';
+      reasoning = `round-${round}: user @mentioned expert=${mentionedExpert} (direction: "${(state as any).mentionDirection ?? 'n/a'}") → ask_user_defense (defense #${defenseCount + 1})`;
     }
 
     // 审计落库（§5.4）

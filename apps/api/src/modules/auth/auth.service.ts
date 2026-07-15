@@ -8,7 +8,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'admin.access', 'audit.read', 'tenant.manage',
   ],
   enterprise_admin: [
-    'review.create', 'review.read.all',
+    'review.create', 'review.read', 'review.read.all',
     'role.read', 'role.write',
     'kb.upload', 'kb.read',
     'admin.access', 'audit.read',

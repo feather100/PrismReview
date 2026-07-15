@@ -42,9 +42,14 @@ import { KnowledgeService } from '../../knowledge/knowledge.service';
  *     · continue_debate：存在 high-risk 冲突 → 派发 round-2 debate turns
  *     两者在 9.5b 均触发 currentRound++ + round-N 派发（多轮循环）。
  */
-type NextNode = 'completed' | 'aborted' | 'running' | 'tool_node';
-function routeAfterSummarized(type: ModeratorDecisionType): NextNode {
+type NextNode = 'completed' | 'aborted' | 'running' | 'tool_node' | 'pending_defense';
+
+const DEFENSE_MAX = 2; // max tours de défense utilisateur
+
+function routeAfterSummarized(type: ModeratorDecisionType, defenseCount: number): NextNode {
   switch (type) {
+    case 'ask_user_defense':
+      return defenseCount < DEFENSE_MAX ? 'pending_defense' : 'completed';
     case 'converge':
     case 'terminate_proposal':
       return 'completed';
@@ -138,6 +143,8 @@ export class ReviewOrchestrator implements OnModuleInit {
       }),
       // P4 (Sprint 5.2) HITL 暂停节点 stub：写 checkpoint + 空转等待 resume。
       interrupted: async () => ({ status: 'interrupted', currentNodeId: 'interrupted' }),
+      // Défense : attente que l'utilisateur soumette sa défense / complément.
+      pending_defense: async () => ({ status: 'summarized', currentNodeId: 'pending_defense' }),
     };
     return {
       nodes,
@@ -151,7 +158,7 @@ export class ReviewOrchestrator implements OnModuleInit {
         {
           kind: 'conditional',
           from: 'summarized',
-          route: (s) => routeAfterSummarized(s.lastDecisionType ?? 'converge'),
+          route: (s) => routeAfterSummarized(s.lastDecisionType ?? 'converge', s.defenseCount ?? 0),
         },
         { kind: 'static', from: 'running', to: 'failed' },
         // P4 (Sprint 5.2) Tool 节点边（stub）：tool_approval 后进入 tool_node，完成后回到 summarized。
@@ -281,6 +288,19 @@ export class ReviewOrchestrator implements OnModuleInit {
     await this.checkpoint(reviewId, 'summarized', summarizedState);
     await this.persistState(reviewId, summarizedState);
 
+    // --- Boucle de défense : si le Moderator demande la défense, on attend l'utilisateur ---
+    if (decision.decisionType === 'ask_user_defense' && (state.defenseCount ?? 0) < DEFENSE_MAX) {
+      // Enregistrer la demande de défense côté DB (côté frontend poll la dernière décision via API)
+      await this.prisma.review.update({
+        where: { id: reviewId },
+        data: { defenseCount: (state.defenseCount ?? 0) + 1 },
+      });
+      this.logger.log(`[Defense] review ${reviewId.substring(0, 8)} ask_user_defense (round ${state.round}, defense #${(state.defenseCount ?? 0) + 1}) — waiting for user input`);
+      // Émettre l'événement SSE "defense.requested"
+      this.emitDefenseEvent(reviewId, decision);
+      return; // on reprendra après soumission de la défense utilisateur
+    }
+
     // P3：summarized 节点聚合 Memory（蒸馏 profile + project memory）；
     // 多轮 round≥3 触发滚动压缩。失败不阻塞主流程（catch 兜底，T17）。
     if (this.memoryService) {
@@ -296,7 +316,7 @@ export class ReviewOrchestrator implements OnModuleInit {
     }
 
     // P2-3：条件路由 —— summarized 的下一节点由 decide() 结果决定（非硬编码 completed）
-    const next = routeAfterSummarized(decision.decisionType);
+    const next = routeAfterSummarized(decision.decisionType, state.defenseCount ?? 0);
     const rid = reviewId.substring(0, 8);
 
     if (next === 'aborted') {
@@ -370,6 +390,34 @@ export class ReviewOrchestrator implements OnModuleInit {
     await this.persistState(reviewId, completedState);
     this.cleanupReview(reviewId);
     this.logger.log(`Spine complete: review ${rid} → completed (decision=${decision.decisionType})`);
+  }
+
+  /** Emit SSE 'defense.requested' to connected clients. */
+  private emitDefenseEvent(reviewId: string, decision: { reasoning?: string; round?: number }) {
+    try {
+      const payload = JSON.stringify({ type: 'defense.requested', reviewId, reasoning: decision.reasoning ?? '', round: decision.round ?? 0, ts: new Date().toISOString() });
+      // Notify gateway subscribers
+      const gw = (globalThis as any).__prismGateway;
+      if (gw?.emit) gw.emit(reviewId, payload);
+    } catch { /* ignore SSE errors */ }
+  }
+
+  /** Démarrer un round de défense après soumission utilisateur. */
+  async startDefenseRound(reviewId: string, defenseContent: string, targetExpert?: string): Promise<void> {
+    const review = await this.prisma.review.findUnique({ where: { id: reviewId } });
+    if (!review) throw new Error(`Review ${reviewId} not found`);
+    const round = review.currentRound ?? 1;
+    const sessionId = `session-${reviewId}-defense-${review.defenseCount ?? 1}`;
+    // Re-dispatch round-N avec mention de la défense (le contenu est lu depuis review.last_defense à l'exécution du turn)
+    this.queue.enqueue('review.start', {
+      reviewId,
+      sessionId,
+      round,
+      turnPhasePattern: undefined,
+      defenseContext: defenseContent,
+      targetMention: targetExpert,
+    });
+    this.logger.log(`[Defense] review ${reviewId.substring(0, 8)} round-${round} restarted (defense #${review.defenseCount ?? 1}, target=${targetExpert ?? 'all'})`);
   }
 
   /**

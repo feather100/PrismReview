@@ -9,6 +9,8 @@ import { MODERATOR_TOKEN } from './orchestrator/moderator';
 import { createModeratorWithEnv } from './orchestrator/llm-moderator';
 import { QualityService } from './quality/quality.service';
 import { QualityController } from './quality/quality.controller';
+import { DefenseController } from './defense.controller';
+import { WorkflowRegistry } from '../workflow/workflow.registry';
 import { PromptModule } from '../prompt/prompt.module';
 import { MemoryModule } from '../memory/memory.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
@@ -20,7 +22,7 @@ import { PromptServiceImpl } from '../prompt/prompt.service';
 
 @Module({
   imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule, WorkflowModule, ReportingModule],
-  controllers: [ReviewsController, QualityController],
+  controllers: [ReviewsController, QualityController, DefenseController],
   providers: [
     ReviewsService,
     ReviewsGateway,

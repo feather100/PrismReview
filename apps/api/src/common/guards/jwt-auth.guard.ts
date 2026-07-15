@@ -7,6 +7,8 @@ export class JwtAuthGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
+    // DEBUG temporaire
+    if (process.env.AUTH_DEBUG) console.log(`[JwtGuard] ${request.method} ${request.url} user=${request.user ? 'Y' : 'N'} url=${request.originalUrl || request.url}`);
     // Sprint 1 Mock: 注入一个默认用户；后续 Sprint 替换为真实 JWT 验证
     if (!request.user) {
       request.user = {

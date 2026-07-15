@@ -191,6 +191,14 @@ model Review {
   providerConfig   Json?        @map("provider_config")
   // --- Langue forcée (zh / en). Null → auto-détection depuis l'objectif. ---
   reviewLang       String?      @map("review_lang")
+
+  // --- @Expert mention (user can direct a specific expert) ---
+  mentionExpertCode String?     @map("mention_expert_code")  // e.g. "CTO"
+  mentionDirection  String?     @map("mention_direction")   // free-text question/direction
+
+  // --- Boucle de défense utilisateur ---
+  defenseCount      Int          @default(0) @map("defense_count")  // nb de défenses déjà soumises
+  lastDefense       Json?        @map("last_defense")               // {content, expertCode, round}
   // --- Persistenter Link zum genutzten LlmProvider ---
   llmProviderId    String?      @map("llm_provider_id") @db.Uuid
   llmProvider      LlmProvider? @relation(fields: [llmProviderId], references: [id], onDelete: SetNull, onUpdate: Cascade)

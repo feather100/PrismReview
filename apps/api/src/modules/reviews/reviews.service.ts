@@ -498,6 +498,57 @@ export class ReviewsService {
     return records;
   }
 
+  async getState(reviewId: string, user: any) {
+    await this.assertOwned(reviewId, user.tenantId, user.id);
+    const r = await this.prisma.review.findUnique({ where: { id: reviewId } });
+    if (!r) throw new NotFoundException('Review not found');
+    const lastDecision = await this.prisma.moderatorDecision.findFirst({
+      where: { reviewId }, orderBy: { createdAt: 'desc' },
+      select: { decisionType: true, reasoning: true, round: true },
+    });
+    return {
+      reviewId: r.id,
+      status: r.status,
+      round: r.currentRound,
+      defenseCount: r.defenseCount,
+      mentionExpertCode: r.mentionExpertCode,
+      mentionDirection: r.mentionDirection,
+      lastDecision,
+      awaitingUserDefense: r.status === 'summarized' && lastDecision?.decisionType === 'ask_user_defense',
+    };
+  }
+
+  async setMention(reviewId: string, user: any, expertCode: string, direction?: string) {
+    await this.assertReview(reviewId, user.tenantId, ['diagnosed', 'created']);
+    return this.prisma.review.update({
+      where: { id: reviewId },
+      data: { mentionExpertCode: expertCode, mentionDirection: direction ?? null },
+      select: { id: true, mentionExpertCode: true, mentionDirection: true },
+    });
+  }
+
+  async submitDefense(reviewId: string, user: any, content: string, targetExpert?: string) {
+    const review = await this.assertReview(reviewId, user.tenantId, ['summarized']);
+    if (!content?.trim()) throw new BadRequestException('Defense content required');
+
+    // Stocker la défense dans last_defense + incrémenter defenseCount
+    const updated = await this.prisma.review.update({
+      where: { id: reviewId },
+      data: {
+        lastDefense: { content, targetExpert: targetExpert ?? null, round: review.currentRound, at: new Date().toISOString() },
+        defenseCount: (review.defenseCount ?? 0) + 1,
+        status: 'running',
+        currentRound: (review.currentRound ?? 1) + 1,
+      },
+    });
+
+    // Déclencher un nouveau round avec le contexte de la défense
+    const sessionId = `session-${reviewId}-defense-${updated.defenseCount}`;
+    await this.orchestrator.startDefenseRound(reviewId, content, targetExpert);
+
+    return { reviewId, status: 'running', round: updated.currentRound, defenseCount: updated.defenseCount, sessionId };
+  }
+
   async getReport(reviewId: string, user: any): Promise<ReportResponseDto> {
     return this.reportingService.generateReport(reviewId, user);
   }

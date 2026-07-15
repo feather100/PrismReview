@@ -30,10 +30,13 @@ export default function ModeratorPanel({ reviewId, refreshKey }: { reviewId: str
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/reviews/${reviewId}/moderator-decisions`, {
+        const res = await fetch(`/api/reviews-defense/${reviewId}/state`, {
           headers: { Authorization: 'Bearer test-token' },
         });
-        if (res.ok && !cancelled) setDecisions(await res.json());
+        if (res.ok && !cancelled) {
+          const st = await res.json();
+          setDecisions(st.lastDecision ? [{ ...st.lastDecision, id: `${reviewId}-${st.round}`, createdAt: new Date().toISOString() }] : []);
+        }
       } catch { /* ignore */ } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };

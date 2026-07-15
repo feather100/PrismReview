@@ -58,7 +58,8 @@ export type ModeratorDecisionType =
   | 'force_stop'
   | 'terminate_proposal'
   | 'tool_approval'   // P4（Sprint 5.2）：Moderator 工具审批中断
-  | 'propose_tool';  // P5: 评审Moderator 提议使用外部工具后再决策
+  | 'propose_tool'    // P5: 评审Moderator 提议使用外部工具后再决策
+  | 'ask_user_defense'; // @用户申辩 — 暂停等待用户补充材料
 
 export interface ModeratorDecisionRef {
   readonly decisionId: string;
@@ -88,6 +89,10 @@ export interface ReviewState {
   pendingToolCalls?: string[];
   // 最近一次 Moderator 决策类型（供 summarized 条件边读取，P2-3）；9.5a 新增。
   lastDecisionType?: ModeratorDecisionType;
+  // --- @专家 + 申辩循环 ---
+  defenseCount?: number;
+  mentionExpertCode?: string;
+  mentionDirection?: string;
   updatedAt: string; // ISO
 }
 

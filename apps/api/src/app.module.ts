@@ -41,9 +41,7 @@ import { LlmProviderModule } from './modules/llm-provider/llm-provider.module';
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,
     },
-    // 守卫按 providers 数组顺序执行：先 JwtAuthGuard 注入用户，再 PermissionsGuard 校验权限
-    JwtAuthGuard,
-    PermissionsGuard,
+    // APP_GUARD global : JwtAuthGuard (auth) → PermissionsGuard (RBAC)
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
