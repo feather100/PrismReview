@@ -1,55 +1,94 @@
 'use client';
-import React, { useState } from 'react';
-import { Typography, Card, Row, Col, Table, Tag, Button, Space, Tooltip, message, Alert } from 'antd';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Typography, Card, Row, Col, Table, Tag, Button, Space, message, Modal, Form, Input, Select, Alert, Empty, Spin, Collapse,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { moduleClient, PromptTemplate } from '../../lib/api-client/client';
 
 const { Title, Text, Paragraph } = Typography;
 
-interface Template {
-  id: string;
-  name: string;
-  layer: 'base' | 'task' | 'context' | 'format';
-  version: string;
-  role: string;
-  updatedAt: string;
-  active: boolean;
-}
-
-// 演示数据 — 实际列表将由新的 /api/prompt-templates 接口（规划中）提供。
-const MOCK: Template[] = [
-  { id: '1', name: '技术审核员 · 角色基底', layer: 'base', version: 'v2.1', role: 'CTO', updatedAt: '2026-07-10', active: true },
-  { id: '2', name: '商业分析 · 任务层',   layer: 'task', version: 'v1.3', role: 'CFO', updatedAt: '2026-07-08', active: true },
-  { id: '3', name: '结构化输出 · 格式层', layer: 'format', version: 'v1.0', role: '通用', updatedAt: '2026-06-20', active: true },
-  { id: '4', name: 'Moderator 收敛 · 任务层', layer: 'task', version: 'v3.2', role: 'Moderator', updatedAt: '2026-07-12', active: true },
-  { id: '5', name: '项目上下文注入',     layer: 'context', version: 'v1.0', role: '通用', updatedAt: '2026-05-30', active: false },
-];
-
 const LAYER_COLOR: Record<string, string> = { base: 'blue', task: 'orange', context: 'purple', format: 'cyan' };
 const LAYER_CN: Record<string, string> = { base: 'base · 角色基底', task: 'task · 任务层', context: 'context · 上下文层', format: 'format · 格式层' };
+const ROLE_CODES = ['CTO', 'CFO', 'PMO', 'Compliance', 'UserAdvocate', '通用', 'Moderator'];
+const LAYERS: PromptTemplate['layer'][] = ['base', 'task', 'context', 'format'];
 
 export default function PromptsPage() {
-  const [tpls] = useState<Template[]>(MOCK);
-  const columns: ColumnsType<Template> = [
-    { title: '名称', dataIndex: 'name', key: 'name', render: (t: string, r) => <Space direction="vertical" size={0}><Text strong>{t}</Text><Text type="secondary" style={{ fontSize: 12 }}>{LAYER_CN[r.layer]}</Text></Space> },
+  const [tpls, setTpls] = useState<PromptTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [histOpen, setHistOpen] = useState<string | null>(null);
+  const [history, setHistory] = useState<PromptTemplate[]>([]);
+  const [form] = Form.useForm<{ roleCode: string; layer: string; content: string; description: string }>();
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchPrompts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setTpls(await moduleClient.listPrompts());
+    } catch (e: any) {
+      setError(e.message ?? '加载 Prompt 模板失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchPrompts(); }, [fetchPrompts]);
+
+  const handleRegister = async () => {
+    setSubmitting(true);
+    try {
+      const v = await form.validateFields();
+      await moduleClient.registerPrompt({
+        roleCode: v.roleCode,
+        layer: v.layer,
+        content: v.content,
+        description: v.description || '',
+      });
+      message.success('模板已注册');
+      setOpen(false);
+      form.resetFields();
+      await fetchPrompts();
+    } catch (e: any) {
+      message.error(e.message ?? '注册失败');
+    } finally { setSubmitting(false); }
+  };
+
+  const handleRollback = async (roleCode: string, layer: string, version: string) => {
+    try {
+      await moduleClient.rollbackPrompt(roleCode, layer, version);
+      message.success(`已回滚到 ${version}`);
+      await fetchPrompts();
+    } catch (e: any) {
+      message.error(e.message ?? '回滚失败');
+    }
+  };
+
+  const handleViewHistory = async (roleCode: string, layer: string) => {
+    setHistOpen(roleCode + '/' + layer);
+    try {
+      setHistory(await moduleClient.promptHistory(roleCode, layer));
+    } catch { /* ignore */ }
+  };
+
+  const activeCount = tpls.filter((t) => {
+    // 无显式 active 字段：按 (roleCode+layer) 取最新版本视为激活
+    const latest = tpls.filter((x) => x.roleCode === t.roleCode && x.layer === t.layer).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    return latest?.id === t.id;
+  }).length;
+
+  const columns: ColumnsType<PromptTemplate> = [
+    { title: '名称', dataIndex: 'roleCode', key: 'name', render: (_t: string, r) => <Space direction="vertical" size={0}><Text strong>{r.roleCode}</Text><Text type="secondary" style={{ fontSize: 12 }}>{LAYER_CN[r.layer]}</Text></Space> },
     { title: '层', dataIndex: 'layer', key: 'layer', width: 140, render: (l: string) => <Tag color={LAYER_COLOR[l]}>{l}</Tag> },
     { title: '版本', dataIndex: 'version', key: 'version', width: 100, render: (v: string) => <Text code>{v}</Text> },
-    { title: '角色', dataIndex: 'role', key: 'role', width: 120, render: (r: string) => <Tag>{r}</Tag> },
-    { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 150, render: (d: string) => <Text type="secondary">{d}</Text> },
+    { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 160, render: (d: string) => <Text type="secondary">{new Date(d).toLocaleDateString('zh-CN')}</Text> },
     {
-      title: '状态',
-      dataIndex: 'active',
-      key: 'active',
-      width: 100,
-      render: (a: boolean) => <Tag color={a ? 'green' : 'default'}>{a ? '激活' : '历史'}</Tag>,
-    },
-    {
-      title: '操作',
-      key: 'op',
-      width: 140,
-      render: (_: unknown, r: Template) => (
+      title: '操作', key: 'op', width: 170, render: (_: unknown, r) => (
         <Space>
-          <Button type="link" size="small" onClick={() => message.info(`模板详情：${r.name}（占位）`)}>详情</Button>
-          {!r.active && <Button type="link" size="small" onClick={() => message.info(`回滚到 ${r.version}（占位）`)}>回滚</Button>}
+          <Button type="link" size="small" onClick={() => handleViewHistory(r.roleCode, r.layer)}>历史</Button>
+          <Button type="link" size="small" onClick={() => handleRollback(r.roleCode, r.layer, r.version)}>回滚</Button>
         </Space>
       ),
     },
@@ -64,33 +103,59 @@ export default function PromptsPage() {
             四层组装 (base · task · context · format) + 版本化 + 可回滚。变更 Prompt 模板 = 影响后续每一轮评审的发言指令。
           </Paragraph>
         </Space>
-        <Tooltip title="注册新模板（规划中，待增加后台端点）">
-          <Button type="primary" disabled>+ 注册模板</Button>
-        </Tooltip>
+        <Button type="primary" onClick={() => setOpen(true)}>+ 注册模板</Button>
       </div>
 
-      <Alert
-        type="info"
-        showIcon
-        message="当前展示来自本地演示数据 — 后端 /api/prompt-templates Sprint B 就绪后将自动切换为真实数据。"
-        closable
-      />
+      {error && <Alert message="加载失败" description={error} type="error" showIcon closable onClose={() => setError(null)} action={<Button onClick={fetchPrompts}>重试</Button>} />}
 
       <Row gutter={[16, 16]}>
-        <Col xs={8}>
-          <Card><Space direction="vertical"><Text type="secondary">模板总数</Text><Text style={{ fontSize: 28, fontWeight: 700 }}>{tpls.length}</Text></Space></Card>
-        </Col>
-        <Col xs={8}>
-          <Card><Space direction="vertical"><Text type="secondary">激活版本数</Text><Text style={{ fontSize: 28, fontWeight: 700, color: '#22c55e' }}>{tpls.filter((t) => t.active).length}</Text></Space></Card>
-        </Col>
-        <Col xs={8}>
-          <Card><Space direction="vertical"><Text type="secondary">角色覆盖</Text><Text style={{ fontSize: 28, fontWeight: 700 }}>{new Set(tpls.map((t) => t.role)).size}</Text></Space></Card>
-        </Col>
+        <Col xs={8}><Card><Space direction="vertical"><Text type="secondary">注册总数</Text><Text style={{ fontSize: 28, fontWeight: 700 }}>{loading ? '—' : tpls.length}</Text></Space></Card></Col>
+        <Col xs={8}><Card><Space direction="vertical"><Text type="secondary">激活模板</Text><Text style={{ fontSize: 28, fontWeight: 700, color: '#22c55e' }}>{loading ? '—' : activeCount}</Text></Space></Card></Col>
+        <Col xs={8}><Card><Space direction="vertical"><Text type="secondary">角色覆盖</Text><Text style={{ fontSize: 28, fontWeight: 700 }}>{loading ? '—' : new Set(tpls.map((t) => t.roleCode)).size}</Text></Space></Card></Col>
       </Row>
 
       <Card>
-        <Table<Template> columns={columns} dataSource={tpls} rowKey="id" pagination={false} />
+        <Spin spinning={loading}>
+          {tpls.length === 0 && !loading ? (
+            <Empty description="还没有注册 Prompt 模板" style={{ padding: 48 }}>
+              <Button type="primary" onClick={() => setOpen(true)}>注册第一个模板</Button>
+            </Empty>
+          ) : (
+            <Table<PromptTemplate> columns={columns} dataSource={tpls} rowKey="id" pagination={false} />
+          )}
+        </Spin>
       </Card>
+
+      <Modal title="注册 Prompt 模板" open={open} onCancel={() => { setOpen(false); form.resetFields(); }} onOk={handleRegister} confirmLoading={submitting} okText="注册" width={600}>
+        <Form form={form} layout="vertical">
+          <Form.Item name="roleCode" label="角色 (roleCode)" rules={[{ required: true }]}>
+            <Select mode="tags" options={ROLE_CODES.map((c) => ({ value: c, label: c }))} placeholder="选择或输入角色编码" />
+          </Form.Item>
+          <Form.Item name="layer" label="层 (layer)" rules={[{ required: true }]} initialValue="base">
+            <Select options={LAYERS.map((l) => ({ value: l, label: LAYER_CN[l] }))} />
+          </Form.Item>
+          <Form.Item name="content" label="模板内容" rules={[{ required: true, message: '请输入 Prompt 模板内容' }]}>
+            <Input.TextArea rows={8} placeholder="输入该层级的 Prompt 模板文本，支持变量占位如 {{objective}}" />
+          </Form.Item>
+          <Form.Item name="description" label="变更说明">
+            <Input placeholder="例：新增安全审查维度" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={`版本历史 ${histOpen ?? ''}`} open={!!histOpen} onCancel={() => setHistOpen(null)} footer={null} width={700}>
+        <Table<PromptTemplate>
+          size="small"
+          columns={[
+            { title: '版本', dataIndex: 'version', key: 'v', width: 80 },
+            { title: '创建时间', dataIndex: 'createdAt', key: 'd', width: 160, render: (d: string) => new Date(d).toLocaleString('zh-CN') },
+            { title: '内容预览', dataIndex: 'content', key: 'c', render: (c: string) => <Text ellipsis style={{ maxWidth: 300 }}>{c.slice(0, 60)}</Text> },
+          ]}
+          dataSource={history}
+          rowKey="id"
+          pagination={false}
+        />
+      </Modal>
     </Space>
   );
 }
