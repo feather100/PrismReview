@@ -1,225 +1,218 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { Typography, Card, Input, Button, Space, Row, Col, Alert, Spin } from 'antd';
+import React, { useEffect, useState } from 'react';
+import {
+  Typography, Card, Row, Col, Statistic, Button, Space, Tag, Empty, Spin, Alert, message, Tooltip,
+} from 'antd';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '../lib/api-client/client';
-import { CheckCircleOutlined, SettingOutlined, DatabaseOutlined } from '@ant-design/icons';
+import {
+  FileSearchOutlined, AuditOutlined, TeamOutlined, AppstoreOutlined, BookOutlined,
+  PlusOutlined, ArrowRightOutlined, BulbOutlined, ReloadOutlined, ThunderboltOutlined,
+} from '@ant-design/icons';
+import { apiClient, ReviewListItem, ReportResponse } from '../lib/api-client/client';
+import { getRoleDisplayName } from '../lib/i18n/role-mapper';
+import StatCard from '../components/dashboard/StatCard';
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
-export default function DemoDashboard() {
-  const [reviewId, setReviewId] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [recentReviewId, setRecentReviewId] = useState<string | null>(null);
+const STATUS_COLOR: Record<string, string> = {
+  created: '#94a3b8',
+  diagnosed: '#0ea5e9',
+  running: '#6366f1',
+  interrupted: '#f59e0b',
+  summarized: '#6366f1',
+  completed: '#22c55e',
+  failed: '#ef4444',
+  aborted: '#f59e0b',
+  archived: '#94a3b8',
+};
+
+const QUICK_CTAS = [
+  { label: '返回评审中心', icon: <FileSearchOutlined />, path: '/reviews' },
+  { label: '评审团', icon: <TeamOutlined />, path: '/roles' },
+  { label: '审计日志', icon: <AuditOutlined />, path: '/audit' },
+  { label: 'Prompt 模板', icon: <AppstoreOutlined />, path: '/prompts' },
+  { label: '知识库', icon: <BookOutlined />, path: '/knowledge' },
+  { label: 'Workflow 预设', icon: <BulbOutlined />, path: '/workflows' },
+];
+
+export default function DashboardPage() {
   const router = useRouter();
+  const [creating, setCreating] = useState(false);
+  const [stats, setStats] = useState<{ total: number; active: number; completed: number; p0: number } | null>(null);
+  const [recent, setRecent] = useState<ReviewListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('recentReviewId');
-    if (saved) {
-      setRecentReviewId(saved);
-    }
-  }, []);
-
-  const saveRecentReview = (id: string) => {
-    localStorage.setItem('recentReviewId', id);
-    setRecentReviewId(id);
-  };
-
-  const handleRouteClick = (id: string, route: string) => {
-    saveRecentReview(id);
-    router.push(`/reviews/${id}${route}`);
-  };
-
-  const handleCreateMockDemo = async () => {
+  const fetchStats = async () => {
+    setLoading(true);
+    setErr(null);
     try {
-      setLoading(true);
-      setError(null);
-      setSuccess(false);
+      const [allRes, completedRes, activeRes, reports] = await Promise.allSettled([
+        apiClient.getReviews({ limit: 1 }),
+        apiClient.getReviews({ status: 'completed', limit: 1 }),
+        apiClient.getReviews({ status: 'running,interrupted,summarized', limit: 50 }),
+        apiClient.getReviews({ limit: 5, status: 'completed' }), // reports preview
+      ]);
 
-      // 1. Create Review
-      const review = await apiClient.createReview({
-        title: 'PrismReview MVP Demo',
-        objective: 'Evaluate the proposed architecture for scalability, cost, and delivery risk'
-      });
-      const newReviewId = review.id;
+      const allTotal = allRes.status === 'fulfilled' ? allRes.value.total : 0;
+      const completedTotal = completedRes.status === 'fulfilled' ? completedRes.value.total : 0;
+      const activeItems = activeRes.status === 'fulfilled' ? activeRes.value.items : [];
+      const recentItems = reports.status === 'fulfilled' ? reports.value.items : [];
 
-      // 2. Diagnose
-      await apiClient.createDiagnosis(newReviewId);
-
-      // 3. Get Diagnosis for recommended roles
-      const diagnosis = await apiClient.getDiagnosis(newReviewId);
-      
-      if (!diagnosis) {
-        throw new Error("未能获取到诊断结果。");
+      // Sample P0 across first page of completed reviews (cap to keep it cheap).
+      let p0 = 0;
+      for (const item of recentItems.slice(0, 5)) {
+        try {
+          const r: ReportResponse = await apiClient.getReport(item.id);
+          p0 += r.metrics?.p0RiskCount ?? 0;
+        } catch { /* skip unreportable */ }
       }
 
-      // 4. Select Roles (top 3)
-      const topRoles = diagnosis.recommendedRoles.slice(0, 3).map(r => ({
-        roleId: r.roleId,
-        weight: r.weight
-      }));
-      await apiClient.saveRoleSelection(newReviewId, topRoles);
-
-      // 5. Start Review
-      await apiClient.startReview(newReviewId);
-
-      setReviewId(newReviewId);
-      saveRecentReview(newReviewId);
-      setSuccess(true);
-    } catch (err: any) {
-      setError(err.message || '创建 Mock 演示评审失败，请稍后重试。');
+      setStats({ total: allTotal, completed: completedTotal, active: activeItems.length, p0 });
+      setRecent(recentItems);
+    } catch (e: any) {
+      setErr(e.message ?? '加载仪表盘失败');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', paddingTop: 32, paddingBottom: 64 }}>
-      {/* Hero Section */}
-      <div style={{ textAlign: 'center', marginBottom: 48 }}>
-        <Title level={1} style={{ margin: 0, fontSize: 48, color: '#1890ff' }}>PrismReview</Title>
-        <Title level={3} style={{ marginTop: 8, color: '#595959' }}>AI 评审委员会</Title>
-        <Paragraph style={{ fontSize: 16, color: '#8c8c8c', maxWidth: 600, margin: '16px auto' }}>
-          AI 评审委员会，自动组织多角色专家完成方案评审
-        </Paragraph>
-      </div>
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
-      {/* Core Steps */}
-      <Row gutter={[24, 24]} style={{ marginBottom: 48 }}>
-        <Col span={8}>
-          <Card title="1. 提交评审材料" bordered={false} style={{ height: '100%', background: '#fafafa' }}>
-            上传您的设计文档。AI 将解析上下文，并推荐理想的专家评审团。
-          </Card>
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const review = await apiClient.createReview({
+        title: `评审  ${new Date().toLocaleDateString('zh-CN')}`,
+        objective: '快速创建的评审 — 请在诊断阶段补充目标',
+      });
+      message.success('评审已创建');
+      router.push(`/reviews/${review.id}`);
+    } catch (e: any) {
+      message.error(e.message ?? '创建失败');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      {/* Hero */}
+      <Card
+        style={{
+          borderRadius: 16,
+          background: 'linear-gradient(135deg, #6366f1 0%, #818cf8 60%, #a78bfa 100%)',
+          color: '#fff',
+          border: 'none',
+        }}
+        styles={{ body: { padding: '32px 36px' } }}
+      >
+        <Row align="middle" gutter={24} justify="space-between">
+          <Col flex="auto">
+            <Title level={2} style={{ color: '#fff', margin: 0 }}>你好，欢迎回来 👋</Title>
+            <Paragraph style={{ color: 'rgba(255,255,255,0.85)', marginTop: 8, marginBottom: 20, maxWidth: 560 }}>
+              PrismReview 的 AI 评审团已就绪。把一份方案丢进去，多专家多轮辩论，
+              由 AI Moderator 收敛出一份可量化、可溯源的正式评审报告。
+            </Paragraph>
+            <Space>
+              <Button type="primary" size="large" icon={<PlusOutlined />} onClick={handleCreate} loading={creating}>
+                创建新评审
+              </Button>
+              <Button size="large" ghost style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.6)' }}
+                icon={<FileSearchOutlined />} onClick={() => router.push('/reviews')}>
+                评审中心
+              </Button>
+            </Space>
+          </Col>
+          <Col xs={0} md={0} lg={8} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Space direction="vertical" align="center" size={0}>
+              <ThunderboltOutlined style={{ fontSize: 72, color: 'rgba(255,255,255,0.35)' }} />
+              <Text style={{ color: 'rgba(255,255,255,0.7)' }}>Zero-config mock demo</Text>
+            </Space>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Stats */}
+      <Row gutter={[16, 16]}>
+        <Col xs={12} md={6}>
+          <StatCard title="评审总数" value={stats?.total ?? 0} loading={loading}
+            accent="#6366f1" icon={<FileSearchOutlined />} onClick={() => router.push('/reviews')} />
         </Col>
-        <Col span={8}>
-          <Card title="2. AI 委员会评审" bordered={false} style={{ height: '100%', background: '#fafafa' }}>
-            观察由专业智能体 (Security, CTO, PMO) 组成的评审团进行实时讨论，识别风险并进行架构推演。
-          </Card>
+        <Col xs={12} md={6}>
+          <StatCard title="进行中" value={stats?.active ?? 0} loading={loading}
+            accent="#f59e0b" icon={<ReloadOutlined spin={loading} />} />
         </Col>
-        <Col span={8}>
-          <Card title="3. 生成评审报告" bordered={false} style={{ height: '100%', background: '#fafafa' }}>
-            自动汇聚风险清单、专家意见和整改行动项，输出结构化的全景评审报告。
-          </Card>
+        <Col xs={12} md={6}>
+          <StatCard title="已完成" value={stats?.completed ?? 0} loading={loading}
+            accent="#22c55e" />
+        </Col>
+        <Col xs={12} md={6}>
+          <StatCard title="P0 风险（近 5 份）" value={stats?.p0 ?? 0} loading={loading}
+            accent="#ef4444" icon={<AuditOutlined />} />
         </Col>
       </Row>
 
-      {/* Recent Reviews */}
-      {recentReviewId && (
-        <Card title="最近评审" style={{ marginBottom: 48, borderColor: '#52c41a' }} extra={<Button type="link" danger onClick={() => { localStorage.removeItem('recentReviewId'); setRecentReviewId(null); }}>清除记录</Button>}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text type="secondary">评审 ID: <Text strong copyable>{recentReviewId}</Text></Text>
-            <Space>
-              <Button onClick={() => handleRouteClick(recentReviewId, '')}>查看诊断</Button>
-              <Button onClick={() => handleRouteClick(recentReviewId, '/meeting')}>进入会议室</Button>
-              <Button onClick={() => handleRouteClick(recentReviewId, '/report')}>查看报告</Button>
-            </Space>
-          </div>
-        </Card>
-      )}
+      {err && <Alert message="加载失败" description={err} type="warning" showIcon closable onClose={() => setErr(null)} />}
 
-      {/* My Reviews Entry */}
-      <div style={{ textAlign: 'center', marginBottom: 48 }}>
-        <Button type="primary" size="large" onClick={() => router.push('/reviews')} style={{ width: 250, height: 50, fontSize: 18, borderRadius: 8 }}>
-          查看我的评审
-        </Button>
-      </div>
-
-      {/* Demo Tools */}
-      <Title level={4} style={{ marginTop: 64, marginBottom: 24, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>演示工具 (Demo Tools)</Title>
-      <Row gutter={[24, 24]}>
-        {/* Route 1: Mock Demo */}
-        <Col span={12}>
-          <Card 
-            title={<><SettingOutlined style={{ marginRight: 8 }} /> 快速 Mock 演示</>}
-            style={{ height: '100%' }}
-          >
-            <Paragraph>
-              快速生成包含兜底数据的演示评审。无需连接真实的后端 LLM。
-            </Paragraph>
-            
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: 16 }}>
-                <Spin tip="正在创建演示评审..." />
-              </div>
-            ) : (
-              <Button type="primary" size="large" onClick={handleCreateMockDemo} block>
-                创建 Mock 演示评审
-              </Button>
-            )}
-
-            {error && (
-              <Alert message="创建演示评审失败" description={<>请求字段与后端契约不一致，请检查提交参数。<br/><br/><Text type="secondary">{error}</Text></>} type="error" showIcon style={{ marginTop: 16 }} action={<Button onClick={handleCreateMockDemo}>重试</Button>} />
-            )}
-
-            {success && reviewId && (
-              <Card type="inner" style={{ marginTop: 16, borderColor: '#52c41a', background: '#f6ffed' }}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-                  <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 24, marginRight: 8 }} />
-                  <Text strong style={{ fontSize: 16 }}>评审创建成功</Text>
-                </div>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>评审 ID: {reviewId}</Text>
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Button block onClick={() => handleRouteClick(reviewId, '')}>查看诊断</Button>
-                  <Button block onClick={() => handleRouteClick(reviewId, '/meeting')}>进入会议室</Button>
-                  <Button block onClick={() => handleRouteClick(reviewId, '/report')}>查看报告</Button>
+      {/* Quick actions */}
+      <Card title="快速入口" styles={{ body: { padding: '8px 0' } }}>
+        <Row gutter={[16, 16]} style={{ padding: '8px 24px' }}>
+          {QUICK_CTAS.map((c) => (
+            <Col xs={12} md={8} lg={4} key={c.path}>
+              <Card hoverable size="small" onClick={() => router.push(c.path)}
+                style={{ borderRadius: 12, textAlign: 'center', cursor: 'pointer' }}>
+                <Space direction="vertical" size={8}>
+                  <span style={{ fontSize: 22, color: '#6366f1' }}>{c.icon}</span>
+                  <Text style={{ fontSize: 13 }}>{c.label}</Text>
                 </Space>
               </Card>
-            )}
-          </Card>
-        </Col>
+            </Col>
+          ))}
+        </Row>
+      </Card>
 
-        {/* Route 2: DB Opinions / Real Agent Demo */}
-        <Col span={12}>
-          <Card 
-            title={<><DatabaseOutlined style={{ marginRight: 8 }} /> DB 评审意见演示</>}
-            style={{ height: '100%' }}
-          >
-            <Paragraph>
-              如果要运行由真实智能体参与的完整评审，请先在后端运行 CLI 脚本：
-            </Paragraph>
-            <div style={{ background: '#000', color: '#fff', padding: '12px', borderRadius: 6, fontFamily: 'monospace', marginBottom: 16 }}>
-              node scripts/setup-demo-review.js --with-runner
-            </div>
-            <Paragraph>
-              脚本生成有效的 <Text code>reviewId</Text> 后，请将其粘贴至下方以进入评审。
-            </Paragraph>
-            
-            <Input 
-              placeholder="在此粘贴 Review ID..." 
-              value={!success ? reviewId : ''} 
-              onChange={(e) => {
-                setReviewId(e.target.value);
-                setSuccess(false);
-              }} 
-              size="large"
-              style={{ marginBottom: 16 }}
-            />
-            
-            <Space style={{ width: '100%' }}>
-              <Button 
-                disabled={!reviewId || success}
-                onClick={() => handleRouteClick(reviewId, '')}
-              >
-                查看诊断
-              </Button>
-              <Button 
-                disabled={!reviewId || success}
-                onClick={() => handleRouteClick(reviewId, '/meeting')}
-              >
-                进入会议室
-              </Button>
-              <Button 
-                disabled={!reviewId || success}
-                onClick={() => handleRouteClick(reviewId, '/report')}
-              >
-                查看报告
-              </Button>
-            </Space>
-          </Card>
-        </Col>
-      </Row>
-    </div>
+      {/* Recent reviews */}
+      <Card
+        title="最近评审"
+        extra={<Button type="link" icon={<ArrowRightOutlined />} onClick={() => router.push('/reviews')}>查看全部</Button>}
+      >
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 48 }}><Spin tip="加载中…" /></div>
+        ) : recent.length === 0 ? (
+          <Empty description="还没有评审" style={{ padding: 40 }}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate} loading={creating}>
+              创建第一个评审
+            </Button>
+          </Empty>
+        ) : (
+          <Row gutter={[16, 16]}>
+            {recent.map((r) => (
+              <Col xs={24} md={12} lg={8} key={r.id}>
+                <Card hoverable onClick={() => router.push(`/reviews/${r.id}`)}
+                  style={{ borderRadius: 12 }}>
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Text strong style={{ fontSize: 15 }}>{r.title || '(未命名)'}</Text>
+                    <Paragraph type="secondary" ellipsis style={{ marginBottom: 8, fontSize: 13, minHeight: 36 }}>
+                      {r.objective}
+                    </Paragraph>
+                    <Space split={<span style={{ color: '#e2e8f0' }}>·</span>}>
+                      <Tag color={STATUS_COLOR[r.status] ?? '#94a3b8'} style={{ marginInlineEnd: 0 }}>
+                        {r.status}
+                      </Tag>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {new Date(r.updatedAt).toLocaleDateString('zh-CN')}
+                      </Text>
+                    </Space>
+                  </Space>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        )}
+      </Card>
+    </Space>
   );
 }

@@ -4,6 +4,7 @@ import { Card, Tag, Typography, Spin, Space, Button, Row, Col, List, Alert, Empt
 import { useRouter } from 'next/navigation';
 import { apiClient, DiagnosisResponse, RecommendedRole, RadarDimension, RoleSelectionInput, ReviewResponse } from '../../lib/api-client/client';
 import { getRoleDisplayName } from '../../lib/i18n/role-mapper';
+import RadarChart from '../../components/charts/RadarChart';
 
 const { Title, Paragraph } = Typography;
 
@@ -265,14 +266,8 @@ export default function DiagnosisPage({ reviewId }: { reviewId: string }) {
             </div>
             <Paragraph>{data.summary}</Paragraph>
           </Card>
-          <Card title="风险雷达 (原始数据)">
-            {/* G01 degradation: Render as raw list instead of a chart if unstructured or just raw text */}
-            <List
-              size="small"
-              bordered
-              dataSource={data.radarDimensions}
-              renderItem={(d: RadarDimension) => <List.Item>{d.name}: <strong>{d.score} / 100</strong></List.Item>}
-            />
+          <Card title="风险雷达 (五维评分)">
+            <RadarChart data={data.radarDimensions.map((d) => ({ name: d.name, value: d.score }))} size={260} />
           </Card>
         </Col>
         <Col span={8}>

@@ -347,5 +347,118 @@ export const apiClient = {
       }
       throw new Error(error instanceof Error ? `取消归档失败: ${error.message}` : "取消归档失败。");
     }
-  }
+  },
+
+  // ── HITL + meeting helpers (used by Meeting page v2) ──────────────────────
+  interruptReview: async (reviewId: string): Promise<ReviewResponse> => {
+    try {
+      const response = await axios.post<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/interrupt`, {}, {
+        headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+      });
+      return response.data;
+    } catch (error: unknown) {
+      if (isAxiosError(error)) throw new Error(`中断评审失败: ${error.response?.data?.message || error.message}`);
+      throw new Error(error instanceof Error ? `中断评审失败: ${error.message}` : '中断评审失败。');
+    }
+  },
+  resumeReview: async (reviewId: string): Promise<ReviewResponse> => {
+    try {
+      const response = await axios.post<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/resume`, {}, {
+        headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+      });
+      return response.data;
+    } catch (error: unknown) {
+      if (isAxiosError(error)) throw new Error(`恢复评审失败: ${error.response?.data?.message || error.message}`);
+      throw new Error(error instanceof Error ? `恢复评审失败: ${error.message}` : '恢复评审失败。');
+    }
+  },
+  submitHumanTurn: async (
+    reviewId: string,
+    payload: { roleCode: string; dimension: string; issue: string; recommendation: string; riskLevel?: string },
+  ): Promise<void> => {
+    try {
+      await axios.post(`${API_BASE_URL}/reviews/${reviewId}/meetings`, payload, {
+        headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+      });
+    } catch (error: unknown) {
+      if (isAxiosError(error)) throw new Error(`提交人工意见失败: ${error.response?.data?.message || error.message}`);
+      throw new Error(error instanceof Error ? `提交人工意见失败: ${error.message}` : '提交人工意见失败。');
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Module API clients — mirror controllers not yet surfaced in the old demo SPA.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface RoleBrief {
+  id: string;
+  name: string;
+  code: string;
+  activeVersionId: string | null;
+  isPreset: boolean;
+  updatedAt: string;
+}
+
+export interface AuditLogItem {
+  id: string;
+  action: string;
+  resource: string;
+  resourceId: string | null;
+  userId: string | null;
+  createdAt: string;
+  detail?: unknown;
+}
+
+export interface AuditLogList {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  title: string;
+  status: string;
+  chunkCount: number;
+  createdAt: string;
+}
+
+export interface WorkflowPreset {
+  id: string;
+  name: string;
+  description: string;
+}
+
+/** Thin wrappers around the controllers the demo didn't call. */
+export const moduleClient = {
+  listRoles: async (): Promise<RoleBrief[]> => {
+    const { data } = await axios.get<RoleBrief[]>(`${API_BASE_URL}/roles`, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+
+  listAuditLogs: async (params?: { action?: string; resource?: string; page?: number; limit?: number }): Promise<AuditLogList> => {
+    const { data } = await axios.get<AuditLogList>(`${API_BASE_URL}/audit/logs`, {
+      params,
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+
+  listKnowledge: async (): Promise<KnowledgeDocument[]> => {
+    const { data } = await axios.get<KnowledgeDocument[]>(`${API_BASE_URL}/knowledge/documents`, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
+
+  listWorkflows: async (): Promise<WorkflowPreset[]> => {
+    const { data } = await axios.get<WorkflowPreset[]>(`${API_BASE_URL}/workflows`, {
+      headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+    });
+    return data;
+  },
 };

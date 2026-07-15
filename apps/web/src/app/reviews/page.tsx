@@ -1,12 +1,11 @@
 'use client';
-import React, { useEffect, useState } from 'react';
-import { Typography, Table, Tag, Space, Button, Alert, Input, Popconfirm, Empty } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Typography, Table, Tag, Space, Button, Alert, Input, Popconfirm, Empty, Card, Segmented } from 'antd';
+import { SearchOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { apiClient, ReviewListItem, GetReviewsParams } from '../../lib/api-client/client';
 
 const { Title, Text } = Typography;
-const { CheckableTag } = Tag;
 
 // Mirror of the server's 9-state enum (ReviewsService.REVIEW_STATUS_FLOW).
 // Do not add pre-9.3 aliases (draft / diagnosing / ready / summarizing) —
@@ -57,7 +56,20 @@ export default function ReviewListPage() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [selectedBuckets, setSelectedBuckets] = useState<string[]>([]);
   const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState(''); // debounced 值，真正用于请求
+  const [search, setSearch] = useState(''); // 真正的请求用 query
+
+  // 快速计数（用于顶部胶囊）
+  const [counts, setCounts] = useState<{ active: number; completed: number; archived: number } | null>(null);
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [a, c, ar] = await Promise.all([
+        apiClient.getReviews({ status: 'running,interrupted,summarized', limit: 1 }),
+        apiClient.getReviews({ status: 'completed', limit: 1 }),
+        apiClient.getReviews({ status: 'archived', limit: 1 }),
+      ]);
+      setCounts({ active: a.total, completed: c.total, archived: ar.total });
+    } catch { /* ignore stats failure */ }
+  }, []);
 
   // 搜索框 debounce(300ms)
   useEffect(() => {
@@ -88,6 +100,9 @@ export default function ReviewListPage() {
     fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagination.current, pagination.pageSize, selectedBuckets, search]);
+
+  // 顶部计数
+  useEffect(() => { fetchCounts(); }, [fetchCounts]);
 
   const handleTableChange = (newPagination: any) => {
     setPagination({
@@ -254,11 +269,49 @@ export default function ReviewListPage() {
   );
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={3} style={{ margin: 0 }}>我的评审</Title>
-        <Button type="primary" onClick={() => router.push('/reviews/new')}>新建评审</Button>
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Title level={3} style={{ margin: 0 }}>评审中心</Title>
+        <Space>
+          <Button icon={<ReloadOutlined spin={loading} />} onClick={() => { fetchCounts(); fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search); }}>
+            刷新
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push('/reviews/new')}>
+            新建评审
+          </Button>
+        </Space>
       </div>
+
+      {/* Fast filter chips */}
+      <Card styles={{ body: { padding: '12px 16px' } }} style={{ borderRadius: 12 }}>
+        <Space size={[8, 8]} wrap>
+          <Button
+            type={selectedBuckets.length === 0 ? 'primary' : 'text'}
+            onClick={clearBuckets}
+          >
+            全部 {total}
+          </Button>
+          <Button
+            type={selectedBuckets.includes('active') ? 'primary' : 'text'}
+            onClick={() => { setSelectedBuckets(['active']); setPagination((p) => ({ ...p, current: 1 })); }}
+          >
+            进行中 {counts?.active ?? '—'}
+          </Button>
+          <Button
+            type={selectedBuckets.includes('completed') ? 'primary' : 'text'}
+            onClick={() => { setSelectedBuckets(['completed']); setPagination((p) => ({ ...p, current: 1 })); }}
+          >
+            已完成 {counts?.completed ?? '—'}
+          </Button>
+          <Button
+            type={selectedBuckets.includes('archived') ? 'primary' : 'text'}
+            onClick={() => { setSelectedBuckets(['archived']); setPagination((p) => ({ ...p, current: 1 })); }}
+          >
+            已归档 {counts?.archived ?? '—'}
+          </Button>
+        </Space>
+      </Card>
 
       {error && (
         <Alert
@@ -266,12 +319,14 @@ export default function ReviewListPage() {
           description={error}
           type="error"
           showIcon
-          style={{ marginBottom: 16 }}
+          closable
+          onClose={() => setError(null)}
           action={<Button onClick={() => fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search)}>重试</Button>}
         />
       )}
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+      {/* Search + fine filters */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
         <Input
           allowClear
           prefix={<SearchOutlined />}
@@ -281,20 +336,15 @@ export default function ReviewListPage() {
           style={{ width: 280 }}
         />
         <Space size={[4, 4]} wrap>
-          <CheckableTag
-            checked={selectedBuckets.length === 0}
-            onChange={clearBuckets}
-          >
-            全部
-          </CheckableTag>
           {STATUS_BUCKETS.map((b) => (
-            <CheckableTag
+            <Tag.CheckableTag
               key={b.key}
               checked={selectedBuckets.includes(b.key)}
               onChange={() => toggleBucket(b.key)}
+              style={{ padding: '2px 10px' }}
             >
               {b.label}
-            </CheckableTag>
+            </Tag.CheckableTag>
           ))}
         </Space>
       </div>
@@ -305,14 +355,16 @@ export default function ReviewListPage() {
         rowKey="id"
         loading={loading}
         locale={{ emptyText }}
+        style={{ borderRadius: 12, overflow: 'hidden' }}
         pagination={{
           current: pagination.current,
           pageSize: pagination.pageSize,
           total: total,
           showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 条`,
         }}
         onChange={handleTableChange}
       />
-    </div>
+    </Space>
   );
 }
