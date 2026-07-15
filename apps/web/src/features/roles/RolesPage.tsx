@@ -1,9 +1,9 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Typography, Card, Row, Col, Table, Tag, Avatar, Space, Tooltip, Button, Spin, Alert, Empty, message, Collapse, Modal,
+  Typography, Card, Row, Col, Table, Tag, Avatar, Space, Tooltip, Button, Spin, Alert, Empty, message, Modal, Form, Input, Select,
 } from 'antd';
-import { PlusOutlined, CopyOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, CopyOutlined, InfoCircleOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { apiClient, RoleBrief } from '../../lib/api-client/client';
 import { getRoleDisplayName } from '../../lib/i18n/role-mapper';
@@ -15,12 +15,23 @@ const ROLE_COLORS: Record<string, string> = {
 };
 const hashColor = (code: string) => ROLE_COLORS[code] ?? '#6366f1';
 
+const PRESET_DIMENSIONS: Record<string, string[]> = {
+  CTO: ['架构合理性', '技术可行性', '性能与扩展性', '安全与合规', '技术债务'],
+  CFO: ['投入产出分析', '预算合理性', 'ROI评估', '商业风险', '成本效益'],
+  PMO: ['交付风险', '排期合理性', '资源协调', '外部依赖', '质量保障'],
+  Compliance: ['数据安全与合规', '隐私保护', '法规遵从', '审计可追溯', '跨境合规'],
+  UserAdvocate: ['用户体验', '易用性', '无障碍', '反馈闭环', '价值感知'],
+};
+
 export default function RolesPage() {
   const [roles, setRoles] = useState<RoleBrief[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [form] = Form.useForm<{ name: string; code: string; dimensions: string[] }>();
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchRoles = async () => {
+  const fetchRoles = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -30,9 +41,23 @@ export default function RolesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchRoles(); }, []);
+  useEffect(() => { fetchRoles(); }, [fetchRoles]);
+
+  const handleCreate = async () => {
+    setSubmitting(true);
+    try {
+      const v = await form.validateFields();
+      await apiClient.createRole({ name: v.name, code: v.code, dimensions: v.dimensions || [] });
+      message.success('角色已创建');
+      setOpen(false);
+      form.resetFields();
+      await fetchRoles();
+    } catch (e: any) {
+      message.error(e.message ?? '创建失败');
+    } finally { setSubmitting(false); }
+  };
 
   const presetCount = roles.filter((r) => r.isPreset).length;
   const customCount = roles.length - presetCount;
@@ -69,19 +94,8 @@ export default function RolesPage() {
           <Space size={4}>
             <Text code style={{ fontSize: 12 }}>{v.slice(0, 8)}</Text>
             <Tooltip title="复制版本 ID">
-              <Button
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => {
-                  if (typeof navigator !== 'undefined') {
-                    navigator.clipboard?.writeText(v).then(
-                      () => message.success('已复制'),
-                      () => message.error('复制失败'),
-                    );
-                  }
-                }}
-              />
+              <Button type="text" size="small" icon={<CopyOutlined />}
+                onClick={() => navigator.clipboard?.writeText(v).then(() => message.success('已复制'))} />
             </Tooltip>
           </Space>
         ) : (
@@ -89,20 +103,19 @@ export default function RolesPage() {
         ),
     },
     {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (s: string | undefined, r: RoleBrief) => s === 'disabled'
+        ? <Tag icon={<CloseCircleFilled />} color="default">已停用</Tag>
+        : <Tag icon={<CheckCircleFilled />} color="success">启用中</Tag>,
+    },
+    {
       title: '更新时间',
       dataIndex: 'updatedAt',
       key: 'updatedAt',
       render: (d: string) => <Text type="secondary">{new Date(d).toLocaleDateString('zh-CN')}</Text>,
-    },
-    {
-      title: '操作',
-      key: 'op',
-      render: (_: unknown, row: RoleBrief) => (
-        <Space>
-          <Button type="link" size="small" onClick={() => message.info(`角色详情 ${row.code}（占位）`)}>详情</Button>
-          <Button type="link" size="small" onClick={() => message.info(`版本历史 ${row.code}（占位）`)}>版本</Button>
-        </Space>
-      ),
     },
   ];
 
@@ -115,41 +128,16 @@ export default function RolesPage() {
             管理参与多轮辩论的 AI 专家 — 选择 / 组合 / 配置版本，直接影响评审会深度与收敛方向。
           </Paragraph>
         </Space>
-        <Tooltip title="新建角色（待对接后端创建接口）">
-          <Button type="primary" icon={<PlusOutlined />} disabled>新建角色</Button>
-        </Tooltip>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>新建角色</Button>
       </div>
 
-      <Card styles={{ body: { padding: 0 } }}>
-        <Collapse
-          bordered={false}
-          defaultActiveKey={['info']}
-          items={[{
-            key: 'info',
-            label: <Space><InfoCircleOutlined /> 预设 vs 自定义角色</Space>,
-            children: (
-              <Row gutter={16} style={{ paddingBottom: 8 }}>
-                <Col span={12}><Text strong>预设角色</Text><Paragraph type="secondary" style={{ marginBottom: 0 }}>CTO / CFO / PMO / Compliance / UserAdvocate。覆盖典型架构评审维度，即装即用，不可删除。</Paragraph></Col>
-                <Col span={12}><Text strong>自定义角色</Text><Paragraph type="secondary" style={{ marginBottom: 0 }}>按需扩展审查视角（如云成本优化师、SRE 稳定性审查员等），每个自定义角色独立版本化。</Paragraph></Col>
-              </Row>
-            ),
-          }]}
-        />
-      </Card>
+      {error && <Alert message="加载失败" description={error} type="error" showIcon closable onClose={() => setError(null)} action={<Button onClick={fetchRoles}>重试</Button>} />}
 
       <Row gutter={[16, 16]}>
-        <Col xs={8}>
-          <Card><Space direction="vertical"><Text type="secondary">总角色数</Text><Text style={{ fontSize: 28, fontWeight: 700 }}>{loading ? '—' : roles.length}</Text></Space></Card>
-        </Col>
-        <Col xs={8}>
-          <Card><Space direction="vertical"><Text type="secondary">预设</Text><Text style={{ fontSize: 28, fontWeight: 700, color: '#0ea5e9' }}>{loading ? '—' : presetCount}</Text></Space></Card>
-        </Col>
-        <Col xs={8}>
-          <Card><Space direction="vertical"><Text type="secondary">自定义</Text><Text style={{ fontSize: 28, fontWeight: 700, color: '#22c55e' }}>{loading ? '—' : customCount}</Text></Space></Card>
-        </Col>
+        <Col xs={8}><Card><Space direction="vertical"><Text type="secondary">总角色数</Text><Text style={{ fontSize: 28, fontWeight: 700 }}>{loading ? '—' : roles.length}</Text></Space></Card></Col>
+        <Col xs={8}><Card><Space direction="vertical"><Text type="secondary">预设</Text><Text style={{ fontSize: 28, fontWeight: 700, color: '#0ea5e9' }}>{loading ? '—' : presetCount}</Text></Space></Card></Col>
+        <Col xs={8}><Card><Space direction="vertical"><Text type="secondary">自定义</Text><Text style={{ fontSize: 28, fontWeight: 700, color: '#22c55e' }}>{loading ? '—' : customCount}</Text></Space></Card></Col>
       </Row>
-
-      {error && <Alert message="加载失败" description={error} type="error" showIcon closable onClose={() => setError(null)} action={<Button onClick={fetchRoles}>重试</Button>} />}
 
       <Card>
         <Spin spinning={loading}>
@@ -162,6 +150,24 @@ export default function RolesPage() {
           )}
         </Spin>
       </Card>
+
+      <Modal title="新建角色" open={open} onCancel={() => { setOpen(false); form.resetFields(); }} onOk={handleCreate} confirmLoading={submitting} okText="创建" width={560}>
+        <Form form={form} layout="vertical">
+          <Form.Item name="name" label="角色名称" rules={[{ required: true, message: '请输入角色名称' }]}>
+            <Input placeholder="例如：安全审查员" />
+          </Form.Item>
+          <Form.Item name="code" label="角色代码 (大写英文)" rules={[{ required: true, message: '请输入角色代码' }]}>
+            <Input placeholder="SECURITY" onChange={(e) => form.setFieldValue('code', e.target.value.toUpperCase())} />
+          </Form.Item>
+          <Form.Item name="dimensions" label="审查维度">
+            <Select mode="tags" placeholder="例如：架构合理性 / 成本 / 合规" options={[
+              { value: '架构合理性' }, { value: '技术可行性' }, { value: '性能与扩展性' },
+              { value: '安全与合规' }, { value: '投入产出分析' }, { value: '成本效益' },
+              { value: '交付风险' }, { value: '用户体验' },
+            ]} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   );
 }

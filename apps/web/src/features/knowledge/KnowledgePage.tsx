@@ -1,7 +1,7 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Typography, Card, Row, Col, Table, Tag, Button, Space, Alert, Modal, Input, Select, Spin, Empty, message,
+  Typography, Card, Row, Col, Table, Tag, Button, Space, Alert, Modal, Input, Select, Spin, Empty, message, Form,
 } from 'antd';
 import { PlusOutlined, ExperimentOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -16,8 +16,10 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [form] = Form.useForm<{ title: string; content: string }>();
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchDocs = async () => {
+  const fetchDocs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -27,9 +29,23 @@ export default function KnowledgePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchDocs(); }, []);
+  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  const handleUpload = async () => {
+    setSubmitting(true);
+    try {
+      const v = await form.validateFields();
+      await apiClient.uploadKnowledge({ title: v.title, content: v.content, mimeType: 'text' });
+      message.success('文档已加入知识库切片队列');
+      setUploadOpen(false);
+      form.resetFields();
+      await fetchDocs();
+    } catch (e: any) {
+      message.error(e.message ?? '上传失败');
+    } finally { setSubmitting(false); }
+  };
 
   const columns: ColumnsType<KnowledgeDocument> = [
     { title: '标题', dataIndex: 'title', key: 'title', render: (t: string) => <Text strong>{t}</Text> },
@@ -96,26 +112,17 @@ export default function KnowledgePage() {
         </Spin>
       </Card>
 
-      {/* Upload modal — placeholder (no backend wiring yet, per P4 plan) */}
-      <Modal
-        title="上传文档 (WIP)"
-        open={uploadOpen}
-        onCancel={() => setUploadOpen(false)}
-        onOk={() => { message.success('上传已排队（演示）'); setUploadOpen(false); }}
-        okText="提交（演示）"
-      >
-        <Space direction="vertical" style={{ width: '100%' }} size={12}>
-          <div><Text strong>标题</Text><Input placeholder="例：企业级微服务规范 v2.1" style={{ marginTop: 4 }} /></div>
-          <div>
-            <Text strong>类型</Text>
-            <Select defaultValue="pdf" style={{ width: '100%', marginTop: 4 }} options={[{ value: 'pdf', label: 'PDF' }, { value: 'markdown', label: 'Markdown' }, { value: 'docx', label: 'Word (docx)' }]} />
-          </div>
-          <div>
-            <Text strong>来源</Text>
-            <Select defaultValue="local" style={{ width: '100%', marginTop: 4 }} options={[{ value: 'local', label: '本机文件' }, { value: 'url', label: '外部链接' }]} />
-          </div>
-          <Alert type="info" message="实际上传交由 MCP Tool 层的 parse_document job 处理；当前点击仅发送演示成功提示。" showIcon />
-        </Space>
+      {/* Upload modal — 已接线到后端 */}
+      <Modal title="上传文档" open={uploadOpen} onCancel={() => { setUploadOpen(false); form.resetFields(); }} onOk={handleUpload} confirmLoading={submitting} okText="上传" width={560}>
+        <Form form={form} layout="vertical">
+          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
+            <Input placeholder="例如：企业级微服务规范 v2.1" />
+          </Form.Item>
+          <Form.Item name="content" label="文档内容 (粘贴文本)" rules={[{ required: true, message: '请输入内容' }]}>
+            <Input.TextArea rows={10} placeholder="直接粘贴文档全文。系统将切片并存入知识库（RAG 检索待 MCP Tool 层启用后生效）。" />
+          </Form.Item>
+          <Alert type="info" showIcon message="文档将切片入库；RAG 检索待 MCP Tool 层启用。当前存储仅用于流程验证。" />
+        </Form>
       </Modal>
     </Space>
   );
