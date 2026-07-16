@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useCallback, useEffect } from 'react';
-import { Alert, Spin, Tag, Tooltip, Button, Space, Modal, Form, Input, Select, message, Divider, Card } from 'antd';
+import { Alert, Spin, Tag, Tooltip, Button, Space, Modal, Form, Input, Select, message, Divider, Card, Typography } from 'antd';
+const { Text } = Typography;
 import MeetingHeader from './components/MeetingHeader';
 import AgentPanel, { AgentStatus } from './components/AgentPanel';
 import SpeechFlow from './components/SpeechFlow';
@@ -137,6 +138,50 @@ export default function MeetingPage({ reviewId }: { reviewId: string }) {
   const isSSEEnabled = reviewStatus === 'running' || reviewStatus === 'interrupted' || reviewStatus === 'summarized' || reviewStatus === 'completed';
   const { connectionStatus } = useMeetingSSE(reviewId, handleSSEEvent, isSSEEnabled);
 
+  // état défense / state polling
+  const [defenseState, setDefenseState] = useState<any>(null);
+  const [defenseInput, setDefenseInput] = useState('');
+  const [defenseTarget, setDefenseTarget] = useState('');
+  const [sendingDefense, setSendingDefense] = useState(false);
+  const [defenseRefresh, setDefenseRefresh] = useState(0);
+
+  useEffect(() => {
+    if (!reviewStatus || !['running', 'summarized', 'interrupted'].includes(reviewStatus)) return;
+    const t = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/reviews-defense/${reviewId}/state`, { headers: { Authorization: 'Bearer test-token' } });
+        if (r.ok) {
+          const st = await r.json();
+          setDefenseState((prev: any) => (prev?.reviewId === st.reviewId ? st : prev ?? st));
+          if (st.mentionExpertCode) setDefenseTarget(st.mentionExpertCode);
+        }
+      } catch { /* ignore */ }
+    }, 2500);
+    return () => clearInterval(t);
+  }, [reviewId, reviewStatus]);
+
+  const handleSendDefense = async () => {
+    if (!defenseInput.trim()) return;
+    setSendingDefense(true);
+    try {
+      const r = await fetch(`/api/reviews-defense/${reviewId}/defense`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
+        body: JSON.stringify({ content: defenseInput, targetExpert: defenseTarget || undefined }),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        setDefenseInput('');
+        setDefenseRefresh((n) => n + 1);
+        message.success('Défense soumise — nouveau round démarré');
+      } else {
+        message.error(j.message ?? 'Erreur');
+      }
+    } catch (e: any) {
+      message.error(e.message ?? 'Erreur');
+    } finally { setSendingDefense(false); }
+  };
+
   // 刷新 Moderator 面板 / 状态探测 toutes les 2s pendant le meeting
   useEffect(() => {
     if (reviewStatus === 'completed') return;
@@ -180,10 +225,42 @@ export default function MeetingPage({ reviewId }: { reviewId: string }) {
       <MeetingHeader
         title={`架构评审室: ${reviewId}`}
         status={meetingStatus === 'connecting' ? 'running' : meetingStatus === 'error' ? 'running' : meetingStatus}
-        completedTurns={completedTurns}
-        totalTurns={agents.length > 0 ? Math.max(agents.length, completedTurns) : 0}
+        round={(defenseState?.round) || 1}
+        totalExperts={Math.max(agents.length, completedTurns, 1)}
+        completedTurns={defenseState?.completedTurns ?? completedTurns}
         onViewReport={() => router.push(`/reviews/${reviewId}/report`)}
       />
+
+      {/* ── UI de défense (problème 6) — toujours visible pendant le meeting ── */}
+      {(reviewStatus === 'running' || reviewStatus === 'summarized' || reviewStatus === 'interrupted' || defenseState?.awaitingUserDefense) && (
+        <div style={{ marginTop: 12, marginBottom: 8 }}>
+          <Card size="small" title="✍ 用户申辩 / Réplique utilisateur" styles={{ body: { padding: '12px' } }}>
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              {defenseState?.mentionExpertCode && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  👤 已@专家: <Tag color="blue">{defenseState.mentionExpertCode}</Tag>
+                  {defenseState.mentionDirection ? ` — ${defenseState.mentionDirection}` : ''}
+                </Text>
+              )}
+              {defenseState?.awaitingUserDefense && (
+                <Alert type="warning" showIcon message="主持人要求您补充材料或申辩" style={{ marginBottom: 4 }} />
+              )}
+              <Input.TextArea
+                rows={2}
+                value={defenseInput}
+                onChange={(e) => setDefenseInput(e.target.value)}
+                placeholder={defenseState?.mentionExpertCode ? `针对 ${defenseState.mentionExpertCode} 的申辩/补充...` : '提交额外材料、澄清或回应专家疑虑...'}
+              />
+              <Space>
+                <Button type="primary" size="small" loading={sendingDefense} disabled={!defenseInput.trim()} onClick={handleSendDefense}>
+                  提交申辩 (重启下一轮)
+                </Button>
+                <Text type="secondary" style={{ fontSize: 11 }}>提交后将触发下一轮专家重审</Text>
+              </Space>
+            </Space>
+          </Card>
+        </div>
+      )}
 
       {/* ── HITL control bar ── */}
       {(reviewStatus === 'running' || reviewStatus === 'interrupted' || reviewStatus === 'summarized') && (

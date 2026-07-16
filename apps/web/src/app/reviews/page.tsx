@@ -1,6 +1,6 @@
 'use client';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Typography, Table, Tag, Space, Button, Alert, Input, Popconfirm, Empty, Card, Segmented } from 'antd';
+import { Typography, Table, Tag, Space, Button, Alert, Input, Popconfirm, Empty, Card, Segmented, message } from 'antd';
 import { SearchOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { apiClient, ReviewListItem, GetReviewsParams } from '../../lib/api-client/client';
@@ -145,6 +145,25 @@ export default function ReviewListPage() {
       setError(err.message || '取消归档失败。');
     }
   };
+  const handleDelete = async (id: string) => {
+    try {
+      await apiClient.deleteReview(id);
+      message.success('评审已删除');
+      await fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search);
+    } catch (err: any) {
+      message.error(err.message || '删除失败');
+    }
+  };
+  const handleDeleteAll = async () => {
+    if (!window.confirm('确认清空所有历史评审？此操作不可恢复。')) return;
+    try {
+      const r = await apiClient.deleteAllReviews();
+      message.success(`已清空 ${r.deleted} 条评审`);
+      await fetchReviews(1, pagination.pageSize, selectedBuckets, search);
+    } catch (err: any) {
+      message.error(err.message || '清空失败');
+    }
+  };
 
   const columns = [
     {
@@ -255,6 +274,19 @@ export default function ReviewListPage() {
                 取消归档
               </Button>
             )}
+            {/* Supprimer la review */}
+            <Popconfirm
+              title="Supprimer définitivement cette revue ?"
+              description="Cette action est irréversible (avis, tours, rapports associés seront supprimés)."
+              okText="Supprimer"
+              okType="danger"
+              cancelText="Annuler"
+              onConfirm={() => handleDelete(record.id)}
+            >
+              <Button type="link" size="small" danger>
+                删除
+              </Button>
+            </Popconfirm>
           </Space>
         );
       },
@@ -277,9 +309,12 @@ export default function ReviewListPage() {
           <Button icon={<ReloadOutlined spin={loading} />} onClick={() => { fetchCounts(); fetchReviews(pagination.current, pagination.pageSize, selectedBuckets, search); }}>
             刷新
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push('/reviews/new')}>
-            新建评审
-          </Button>
+          <Space>
+            <Button danger onClick={handleDeleteAll}>清空全部</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push('/reviews/new')}>
+              新建评审
+            </Button>
+          </Space>
         </Space>
       </div>
 

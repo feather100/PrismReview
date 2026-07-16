@@ -244,6 +244,7 @@ export class QueueService implements OnModuleDestroy {
         roleCode: dbRole.code,
         roleVersionId: dbRole.activeVersionId,
         objective: review.objective,
+        content: review.content || '', // 问题 1 修复：内容材料注入到 prompt
         round, // P2-1：贯通到 turn 执行，供 reviewTurn.round 写入 + 语义元组幂等
         // 9.5b：round>=2 的辩论轮标记为 debate phase（mock debater，Contract §10）；P5 由 workflow pattern 覆盖
         phase: phaseFromPattern === 'debate' ? 'debate' : 'round_robin',
@@ -361,7 +362,9 @@ export class QueueService implements OnModuleDestroy {
 
     // 语言决策 : 1) review.lang forcé  2) détection auto depuis l'objectif
     const forcedLang = (payload as any).reviewLang as string | undefined;
-    const isZh = forcedLang ? forcedLang === 'zh' : isLikelyChinese(objective || '');
+    // 问题 2: 修复 CFO/PMO 英文 — 优先使用明确的 lang 设置（不再依赖从 objective 推断）
+    const content = (payload as any).content as string | undefined;
+    const isZh = forcedLang ? forcedLang === 'zh' : isLikelyChinese((objective || '') + '\n' + (content || ''));
     const defenseCtx = (payload as any).defenseContext as string | undefined;
     const targetMention = (payload as any).targetMention as string | undefined;
 
@@ -371,6 +374,12 @@ export class QueueService implements OnModuleDestroy {
       isZh ? '方案内容：' : 'Proposal:',
       objective,
     ];
+    // 问题 1 修复: 把评审材料内容加入 prompt
+    if (content && content.trim()) {
+      promptLines.push('');
+      promptLines.push(isZh ? '评审材料（全文）：' : 'Review Materials (full):');
+      promptLines.push(content);
+    }
     // Contexte de défense (申辩材料) injecté pour le round de ré-évaluation
     if (defenseCtx) {
       promptLines.push('');

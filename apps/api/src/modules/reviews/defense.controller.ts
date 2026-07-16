@@ -23,6 +23,8 @@ interface DefenseStateResponse {
   mentionDirection?: string;
   lastDecision?: any;
   awaitingUserDefense: boolean;
+  totalTurns: number;
+  completedTurns: number;
 }
 
 @Controller('reviews-defense')
@@ -47,11 +49,14 @@ export class DefenseController {
     @Param('reviewId', new ParseUUIDPipe({ version: '4' })) reviewId: string,
   ): Promise<DefenseStateResponse> {
     const r = await this.prisma.review.findUnique({ where: { id: reviewId } });
-    if (!r) return { reviewId, status: 'unknown', round: 0, defenseCount: 0, awaitingUserDefense: false };
+    if (!r) return { reviewId, status: 'unknown', round: 0, defenseCount: 0, awaitingUserDefense: false, totalTurns: 0, completedTurns: 0 };
     const lastDecision = await this.prisma.moderatorDecision.findFirst({
       where: { reviewId }, orderBy: { createdAt: 'desc' },
       select: { decisionType: true, reasoning: true, round: true },
     });
+    // Calculer la progression de tour (problème 3 + 4)
+    const totalTurns = await this.prisma.reviewTurn.count({ where: { reviewId } });
+    const completedTurns = await this.prisma.reviewTurn.count({ where: { reviewId, status: { in: ['completed', 'failed', 'timeout'] } } });
     return {
       reviewId: r.id,
       status: r.status,
@@ -61,6 +66,8 @@ export class DefenseController {
       mentionDirection: r.mentionDirection ?? undefined,
       lastDecision,
       awaitingUserDefense: r.status === 'summarized' && lastDecision?.decisionType === 'ask_user_defense',
+      totalTurns: totalTurns ?? 0,
+      completedTurns: completedTurns ?? 0,
     };
   }
 

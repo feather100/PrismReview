@@ -96,6 +96,27 @@ export class ReviewsService {
     return this.toResponseDto(review);
   }
 
+  async deleteReview(reviewId: string, user: any): Promise<void> {
+    await this.assertOwned(reviewId, user.tenantId, user.id);
+    await this.prisma.reviewOpinion.deleteMany({ where: { reviewId } });
+    await this.prisma.reviewCheckpoint.deleteMany({ where: { reviewId } });
+    await this.prisma.moderatorDecision.deleteMany({ where: { reviewId } });
+    await this.prisma.reviewTurn.deleteMany({ where: { reviewId } });
+    await this.prisma.report.deleteMany({ where: { reviewId } });
+    // BusinessEvent has no reviewId column — skip if not present (avoid FK error)
+    await this.prisma.qualityReport.deleteMany({ where: { reviewId } });
+    await this.prisma.toolCallRequest.deleteMany({ where: { reviewId } });
+    await this.prisma.review.delete({ where: { id: reviewId } });
+  }
+
+  async deleteAllReviews(user: any): Promise<{ deleted: number }> {
+    const reviews = await this.prisma.review.findMany({ where: { tenantId: user.tenantId, createdBy: user.id }, select: { id: true } });
+    for (const r of reviews) {
+      await this.deleteReview(r.id, user);
+    }
+    return { deleted: reviews.length };
+  }
+
   async listReviews(user: any, query: ListReviewsQuery) {
     const page = query.page && query.page > 0 ? query.page : 1;
     const limit = query.limit && query.limit > 0 ? query.limit : 20;

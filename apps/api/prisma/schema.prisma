@@ -155,7 +155,9 @@ model Review {
   createdBy     String   @map("created_by") @db.Uuid
   title         String
   objective     String
-  inputType     String   @default("text") // file | text | both
+  content       String?  @db.Text          // 评审材料/方案全文 (问题 1)
+  inputType     String   @default("both")
+ // file | text | both
   mode          String   @default("round_robin") // round_robin | free_debate | blind_consensus | red_blue
   status        String   @default("created") // created | diagnosed | running | summarized | completed | failed | aborted | interrupted | archived
   // P1 (9.3) enum rename per Contract §7.6: draft/diagnosing→created, ready→diagnosed, summarizing→summarized;

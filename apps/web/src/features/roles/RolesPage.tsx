@@ -7,6 +7,7 @@ import { PlusOutlined, CopyOutlined, InfoCircleOutlined, CheckCircleFilled, Clos
 import type { ColumnsType } from 'antd/es/table';
 import { apiClient, RoleBrief } from '../../lib/api-client/client';
 import { getRoleDisplayName } from '../../lib/i18n/role-mapper';
+import { useRouter } from 'next/navigation';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -30,6 +31,7 @@ export default function RolesPage() {
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm<{ name: string; code: string; dimensions: string[] }>();
   const [submitting, setSubmitting] = useState(false);
+  const router = useRouter();
 
   const fetchRoles = useCallback(async () => {
     setLoading(true);
@@ -128,7 +130,10 @@ export default function RolesPage() {
             管理参与多轮辩论的 AI 专家 — 选择 / 组合 / 配置版本，直接影响评审会深度与收敛方向。
           </Paragraph>
         </Space>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>新建角色</Button>
+        <Space>
+          <Button onClick={() => router.push('/prompts')}>Prompt 模板</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>新建角色</Button>
+        </Space>
       </div>
 
       {error && <Alert message="加载失败" description={error} type="error" showIcon closable onClose={() => setError(null)} action={<Button onClick={fetchRoles}>重试</Button>} />}

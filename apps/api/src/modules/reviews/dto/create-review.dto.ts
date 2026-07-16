@@ -26,7 +26,7 @@ export class CreateReviewDto {
   @IsString() title: string;
   @IsString() objective: string;
 
-  @IsOptional() @IsString() content?: string;
+  @IsOptional() @IsString() content?: string; // 评审材料/方案全文
 
   @IsOptional()
   @IsEnum(['enterprise', 'code-review', 'research', 'thesis', 'round_robin', 'free_debate'])

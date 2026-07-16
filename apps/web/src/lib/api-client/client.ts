@@ -130,6 +130,27 @@ export const apiClient = {
     try { return (await axios.patch<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/archive`, {}, { headers: auth })).data; }
     catch (e: unknown) { throw err('归档评审失败', e); }
   },
+  deleteReview: async (reviewId: string): Promise<void> => {
+    try {
+      await axios.delete(`${API_BASE_URL}/reviews/${reviewId}`, {
+        headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+      });
+    } catch (error: unknown) {
+      if (isAxiosError(error)) throw new Error(`删除失败: ${error.response?.data?.message || error.message}`);
+      throw new Error('删除失败');
+    }
+  },
+  deleteAllReviews: async (): Promise<{ deleted: number }> => {
+    try {
+      const { data } = await axios.delete(`${API_BASE_URL}/reviews/all`, {
+        headers: { Authorization: `Bearer ${API_AUTH_TOKEN}` },
+      });
+      return data;
+    } catch (error: unknown) {
+      if (isAxiosError(error)) throw new Error(`清空失败: ${error.response?.data?.message || error.message}`);
+      throw new Error('清空失败');
+    }
+  },
   unarchiveReview: async (reviewId: string): Promise<ReviewResponse> => {
     try { return (await axios.patch<ReviewResponse>(`${API_BASE_URL}/reviews/${reviewId}/unarchive`, {}, { headers: auth })).data; }
     catch (e: unknown) { throw err('取消归档失败', e); }

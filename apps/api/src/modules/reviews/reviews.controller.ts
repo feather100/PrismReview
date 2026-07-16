@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Sse, Res, UseInterceptors, ClassSerializerInterceptor, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Sse, Res, UseInterceptors, ClassSerializerInterceptor, ParseUUIDPipe } from '@nestjs/common';
 import { Response } from 'express';
 import { Observable } from 'rxjs';
 import { ReviewsService } from './reviews.service';
@@ -171,6 +171,21 @@ export class ReviewsController {
     return this.reviewsService.getModeratorDecisions(reviewId, user);
   }
 
+
+  @Delete(':reviewId')
+  async deleteReview(
+    @CurrentUser() user: AuthUser,
+    @Param('reviewId', new ParseUUIDPipe({ version: '4' })) reviewId: string,
+  ): Promise<void> {
+    await this.reviewsService.deleteReview(reviewId, user);
+  }
+
+  @Delete('all')
+  async deleteAllReviews(
+    @CurrentUser() user: AuthUser,
+  ): Promise<{ deleted: number }> {
+    return this.reviewsService.deleteAllReviews(user);
+  }
 
   @Get(':reviewId/report')
   async getReport(

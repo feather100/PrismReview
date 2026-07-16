@@ -220,11 +220,11 @@ export function parseModelOpinion(text: string): any | null {
 // ── English mock seeds (same keys, English text) ──────────────────────────
 
 const MOCK_RESPONSES_EN: Record<string, { dimension: string; riskLevel: string; issue: string; recommendation: string; confidenceScore: number }> = {
-  CTO: { dimension: 'Architecture Soundness', riskLevel: 'high', issue: 'Core link has no circuit-breaker / degradation, single-point-of-failure risk.', recommendation: 'Split into microservices with per-service timeouts, circuit breakers, and HA deployment.', confidenceScore: 78 },
-  CFO: { dimension: 'Cost-Benefit', riskLevel: 'medium', issue: 'High upfront investment, long-term ROI needs phased validation.', recommendation: 'Adopt a phased funding plan and validate core value in phase 1 before full rollout.', confidenceScore: 72 },
-  PMO: { dimension: 'Delivery Risk', riskLevel: 'medium', issue: 'Schedule is tight, critical-path has external dependency risk.', recommendation: 'Add 20% schedule buffer, lock external dependency owners and dates.', confidenceScore: 65 },
-  Compliance: { dimension: 'Security & Compliance', riskLevel: 'high', issue: 'Proposal involves cross-border user data; privacy impact assessment required.', recommendation: 'Classify and grade data, ensure encrypted transit/storage, and put data-access audit in place.', confidenceScore: 80 },
-  UserAdvocate: { dimension: 'User Experience', riskLevel: 'low', issue: 'Learning curve is high; onboarding docs are missing.', recommendation: 'Add a guided onboarding flow and optimise key page load to under 2s.', confidenceScore: 70 },
+  CTO: { dimension: 'Architecture & Performance', riskLevel: 'high', issue: 'Core link has no circuit-breaker / degradation mechanism, single-point-of-failure risk.', recommendation: 'Split into independently deployable microservices with per-service timeouts, circuit breakers, and HA deployment.', confidenceScore: 78 },
+  CFO: { dimension: 'Cost-Benefit & ROI', riskLevel: 'medium', issue: 'High upfront investment; long-term ROI is promising but requires phased validation.', recommendation: 'Adopt a phased funding plan, validate core value in phase 1 before full rollout, and define clear ROI gates.', confidenceScore: 72 },
+  PMO: { dimension: 'Delivery Risk', riskLevel: 'medium', issue: 'Schedule is tight with external dependency risk on the critical path.', recommendation: 'Add 20% schedule buffer, lock external dependency owners and dates, set milestone checkpoints.', confidenceScore: 65 },
+  Compliance: { dimension: 'Security & Compliance', riskLevel: 'high', issue: 'Proposal involves cross-border user data transfer; privacy impact assessment (PIA) is required.', recommendation: 'Complete data classification and grading, ensure encrypted transit/storage, establish data-access audit trail.', confidenceScore: 80 },
+  UserAdvocate: { dimension: 'User Experience', riskLevel: 'low', issue: 'Learning curve is high for existing users; onboarding docs are missing.', recommendation: 'Add a guided onboarding flow, in-app tooltips, and optimise key page load to under 2s.', confidenceScore: 70 },
 };
 
 // ── MockAdapter ──────────────────────────────────────────────────────────
