@@ -152,6 +152,12 @@ export class MockModerator implements Moderator {
       reasoning = `round-${round}: ${conflictCount} high-risk opinions → conflict detected → continue_debate (round-${round + 1} dispatch)`;
     } else if (conflict) {
       // 冲突存在但未达 debateAfterRound：本轮不进 debate（留待后续轮次），按默认 converge/advance 处理
+      // F4 警告：high-risk 冲突存在却收敛 —— 明确审计意图（行为被锁定测试 converge + debate deferred）。
+      this.logger.warn(
+        `Moderator: high-risk conflict detected (${conflictCount} high-risk opinions) ` +
+          `at round ${round} < debateAfterRound=${config?.debateAfterRound ?? 'N/A'}; ` +
+          `debate deferred — review may converge without debating this conflict`,
+      );
       reasoning = `round-${round}: conflict detected but round < debateAfterRound=${config?.debateAfterRound ?? 'N/A'} → debate deferred`;
     } else if (wantDefense) {
       // @expert mentionné → demander à l'utilisateur de défendre / compléter

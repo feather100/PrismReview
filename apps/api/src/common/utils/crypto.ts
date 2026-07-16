@@ -62,3 +62,91 @@ export function maskApiKey(key: string): string {
   if (key.length <= 8) return '••••••••';
   return `${key.slice(0, 4)}••••${key.slice(-4)}`;
 }
+
+/**
+ * SSRF guard for user-supplied provider baseUrl (Sprint 9.x review finding).
+ *
+ * The provider test/connection path issues server-side `fetch(baseUrl/models)`
+ * with the (decrypted) API key in the Authorization header. If a tenant can set
+ * an arbitrary baseUrl, that becomes an SSRF vector against internal services
+ * (cloud metadata 169.254.169.254, localhost admin ports, RFC1918 ranges).
+ *
+ * This rejects anything that does not resolve to a public, routable host:
+ *  - non-http(s) schemes
+ *  - literal loopback / link-local / private / unspecified addresses
+ *  - hostnames that fail to resolve (defense-in-depth; DNS rebinding still
+ *    needs egress filtering at the infra layer, but this blocks the easy path)
+ *
+ * Throws BadRequestException on rejection so callers can surface a 400.
+ */
+import { lookup } from 'dns/promises';
+import { BadRequestException } from '@nestjs/common';
+
+const BLOCKED_HOSTS = new Set([
+  'localhost',
+  '0.0.0.0',
+  '127.0.0.1',
+  '::1',
+  '0:0:0:0:0:0:0:1',
+  '169.254.169.254', // cloud metadata
+  '169.254.0.1', // cloud metadata (GCP)
+]);
+
+function isPrivateIp(ip: string): boolean {
+  // IPv4
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = +m[1];
+    const b = +m[2];
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 169 && b === 254) return true; // link-local
+    if (a === 127) return true;
+    if (a === 0) return true;
+    return false;
+  }
+  // IPv6 — block everything except globally routable (simplest safe stance)
+  if (ip.includes(':')) {
+    if (ip === '::1' || ip.startsWith('fe80') || ip.startsWith('fc') || ip.startsWith('fd')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function assertPublicUrl(raw: string): Promise<void> {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new BadRequestException(`Invalid baseUrl: ${raw}`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new BadRequestException(`baseUrl scheme must be http(s): ${raw}`);
+  }
+  const host = url.hostname.toLowerCase();
+  if (BLOCKED_HOSTS.has(host)) {
+    throw new BadRequestException(`baseUrl points to a forbidden host: ${host}`);
+  }
+  // Literal IP (skip DNS for IPv6 with zone index etc.)
+  if (/^[\d.]+$/.test(host) || host.includes(':')) {
+    if (isPrivateIp(host)) {
+      throw new BadRequestException(`baseUrl points to a private/loopback address: ${host}`);
+    }
+    return;
+  }
+  // Hostname → resolve and reject if any resolved address is private
+  try {
+    const addrs = await lookup(host, { all: true });
+    for (const a of addrs) {
+      if (isPrivateIp(a.address)) {
+        throw new BadRequestException(`baseUrl resolves to a private address: ${host} → ${a.address}`);
+      }
+    }
+  } catch (e) {
+    if (e instanceof BadRequestException) throw e;
+    // DNS failure → fail closed (don't let unresolvable names through)
+    throw new BadRequestException(`baseUrl host could not be resolved: ${host}`);
+  }
+}

@@ -132,9 +132,11 @@ export interface ConditionalEdge {
 
 export type Edge = StaticEdge | ConditionalEdge;
 
+// F1/F3 说明：状态转移由 orchestrator 内的 routeAfterSummarized() + route() 等显式方法驱动，
+// 不从 edges 数组通用遍历。edges 字段已移除（原两条 from:'interrupted' 条件边为死代码
+// 且二义）。保留 StaticEdge / ConditionalEdge / Edge 类型定义，作为契约文档。
 export interface Graph<S extends ReviewState> {
   readonly nodes: Record<string, Node<S>>;
-  readonly edges: readonly Edge[];
   readonly start: string; // 入口节点 id（如 'created'）
 }
 

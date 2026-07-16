@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { encryptApiKey, decryptApiKey, maskApiKey } from '../../common/utils/crypto';
+import { encryptApiKey, decryptApiKey, maskApiKey, assertPublicUrl } from '../../common/utils/crypto';
 import type { LlmProvider } from '@prisma/client';
 
 export interface ProviderDto {
@@ -83,7 +83,7 @@ export class LlmProviderService {
     const existing = await this.prisma.llmProvider.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Provider nicht gefunden');
     if (input.provider || input.model || input.baseUrl) {
-      this.validate({
+      await this.validate({
         name: input.name ?? existing.name,
         provider: input.provider ?? existing.provider,
         model: input.model ?? existing.model,
@@ -175,17 +175,17 @@ export class LlmProviderService {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
-  private validate(input: { name: string; provider: string; model: string; baseUrl: string }) {
+  private async validate(input: { name: string; provider: string; model: string; baseUrl: string }) {
     if (!input.name?.trim()) throw new BadRequestException('Name is required');
-    if (!['openai_compatible', 'mock'].includes(input.provider)) {
+    // 与 provider-factory 保持一致：mock / lmstudio / openai_compatible 均为一等公民。
+    // 注意 lmstudio 仅在 ALLOW_EXTERNAL_MODEL_CALLS=true 时才会真正发请求（Guard 兜底）。
+    if (!['openai_compatible', 'mock', 'lmstudio'].includes(input.provider)) {
       throw new BadRequestException(`Unsupported provider: ${input.provider}`);
     }
     if (!input.model?.trim()) throw new BadRequestException('Model is required');
-    try {
-      new URL(input.baseUrl);
-    } catch {
-      throw new BadRequestException(`Invalid baseUrl: ${input.baseUrl}`);
-    }
+    // SSRF guard：禁止指向内网 / loopback / 云 metadata 的 baseUrl（同步语法校验 + 异步解析校验）。
+    // 在 create/update 路径调用，防止租户通过 provider baseUrl 探测内部服务。
+    await assertPublicUrl(input.baseUrl);
   }
 
   private toDto(row: LlmProvider): ProviderDto {

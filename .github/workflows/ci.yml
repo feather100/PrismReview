@@ -39,6 +39,31 @@ jobs:
       - name: Type-check Web
         run: cd apps/web && npx tsc --noEmit -p tsconfig.json
 
+  unit:
+    name: "Unit tests (Jest)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @prismreview/api prisma:generate
+
+      - name: Run Jest (api orchestrator core)
+        # 编排核心纯逻辑单测：状态机 / 硬闸 / Moderator 决策，全部 mock，无需 DB/Redis。
+        run: cd apps/api && npx jest --passWithNoTests
+
   smoke:
     name: "Smoke scripts"
     runs-on: ubuntu-latest

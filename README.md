@@ -1,46 +1,73 @@
 # PrismReview
 
-> **多 Agent 智能评审中枢** — 让一群"专家"为你的方案多轮辩论，由 AI Moderator 收敛出一份可量化、可溯源的正式评审报告。
+> **多 Agent 智能评审中枢** —— 让一群"专家 Agent"为你的方案多轮辩论，由 AI Moderator 收敛出一份**可量化、可溯源、可审计**的正式评审报告。
 
-[![CI](https://github.com/feather100/PrismReview/actions/workflows/ci.yml/badge.svg)](https://github.com/feather100/PrismReview/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/language-TypeScript-3178c6)](https://www.typescriptlang.org/)
-[![Stack](https://img.shields.io/badge/stack-NestJS%2010%20%2B%20Next.js%2014-000)](https://nodejs.org/)
-[![Roadmap](https://img.shields.io/badge/P1%E2%80%93P5-done-success)](docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
+<p align="center">
+  <a href="https://github.com/feather100/PrismReview/actions/workflows/ci.yml"><img src="https://github.com/feather100/PrismReview/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/language-TypeScript-3178c6" alt="TypeScript"></a>
+  <img src="https://img.shields.io/badge/stack-NestJS%2010%20%2B%20Next.js%2014-000" alt="Stack">
+  <a href="docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md"><img src="https://img.shields.io/badge/P1%E2%80%93P5-done-success" alt="Roadmap"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome"></a>
+</p>
+
+<p align="center">
+  <b>默认全 mock · 零 API Key · 30 秒跑通 demo</b>
+</p>
 
 ---
 
-**多 Agent 智能评审中枢** — 丢一份企业方案 / 架构设计 / 需求文档进去，多个专家 Agent 多轮辩论，AI Moderator 收敛出一份**可量化、可溯源、可审计**的正式评审报告。默认全 mock，**零 API Key 即可 30 秒跑通 demo**。
+## 📑 目录
+
+- [🌟 这是什么](#-这是什么)
+- [✨ 核心特性](#-核心特性)
+- [🏗️ 架构](#️-架构)
+- [🚀 快速开始](#-快速开始)
+- [🎬 Demo 路线](#-demo-路线)
+- [🤔 为什么这样做（设计思路）](#-为什么这样做设计思路)
+- [⚖️ 与其他方案对比](#️-与其他方案对比)
+- [🧪 质量保障](#-质量保障)
+- [📚 文档索引](#-文档索引)
+- [🗺️ 路线图](#️-路线图)
+- [🤝 贡献](#-贡献)
+- [📄 许可证](#-许可证)
+
+---
+
+## 🌟 这是什么
+
+**PrismReview** 是一个**多 Agent 智能评审中枢**：把一份企业方案 / 架构设计 / 需求文档丢进去，多个专家 Agent 会**多轮辩论**，由 AI **Moderator** 收敛出一份**可量化、可溯源、可审计**的正式评审报告。默认全 mock，**零 API Key 即可 30 秒跑通 demo**。
 
 把一份企业方案、架构设计或需求文档丢给 PrismReview，它会：
 
 1. **诊断**方案类型，推荐一组评审专家（CTO / CFO / PMO / Compliance / 用户代言人 …）；
 2. 让多位 **Reviewer Agent** 在 `round-1` 并行给出结构化意见；
 3. 进入 **多轮辩论（Multi-Round Debate）**，由 **Moderator**（mock 或真 LLM）判定是否继续、收敛或强制停止；
-4. **4 种预设 workflow**（企业 / 代码审查 / 科研 / 论文）驱动不同评分权重与轮次策略；
+4. 用 **4 种预设 workflow**（企业 / 代码审查 / 科研 / 论文）驱动不同评分权重与轮次策略；
 5. 产出带 **加权多维评分 + 来源可溯源 + Markdown 导出** 的正式评审报告。
 
-整套编排跑在一条**自研 graph 脊柱**上：显式 9 值状态机 + checkpoint/resume + 条件路由 + HITL 中断恢复。**默认全 mock，零 API Key 即可一键把 demo 跑通。**
+整套编排跑在一条**自研状态机脊柱**上：显式 9 值状态机 + checkpoint/resume + 条件路由（由 `routeAfterSummarized()` 等显式方法驱动，非通用图遍历）+ HITL 中断恢复。**默认全 mock，零 API Key 即可一键把 demo 跑通。**
 
 ---
 
-## ✨ 特性
+## ✨ 核心特性
 
-- 🗣️ **多轮辩论（Multi-Round Debate）** — 多个专家 Agent 跨轮次交锋，由 Moderator 逼近共识，而非一次性问答。
-- 🕸️ **graph 编排脊柱（Graph Orchestration Spine）** — 9 值状态机 + checkpoint/resume + 条件路由，崩了能从最近节点续跑。
-- 🤖 **真 LLM Moderator（env-gated）** — 支持 LongCat-2.0 / LM Studio / OpenAI 兼容协议；失败自动降级 mock。
-- 🔐 **加密的 Provider-Key-Management** — AES-256-GCM at-rest-Verschlüsselung；Keys werden nie geloggt/nie in Responses gezeigt；UI-Maske `sk-L••••5678`
-- 🛠️ **Provider Admin UI** — Laufzeit-CRUD für LLM-Provider unter `/admin`；Verbindungstest mit Latenz；einfaches Aktivieren/Deaktivieren
-- 🚀 **Setup-Wizard** — Erstkonfiguration in 3 Schritten (Provider wählen → konfigurieren → Verbindung testen)
-- 🔒 **RBAC + 审计** — 4 级平台角色（super_admin / enterprise_admin / department_admin / user）+ 全链路审计日志。
-- 📊 **加权多维评分（Weighted Scoring）** — 4 种预设 workflow 驱动不同维度权重；评分快照落库可审计。
-- 🧠 **蒸馏式 Memory** — Reviewer/Project 蒸馏 profile（非聊天历史）+ 多轮 rolling summary 压缩。
-- 📝 **版本化 Prompt** — 4 层组装（base/task/context/format）+ 版本注册表 + 回滚。
-- 📄 **Markdown 导出（Markdown Export）** — 正式评审报告一键导出，含评分小节。
-- 🔍 **来源可观测（Provenance Observability）** — `providerSummary` 五态来源追踪：`mock / lmstudio / openai_compatible / fallback_mock / failed`。
-- 🛡️ **硬闸兜底（Hard-Gate Guardrails）** — `max_rounds` / `max_turns_per_reviewer` 收敛硬闸，杜绝无限讨论。
-- 🧹 **内存安全** — 终态自动清理运行时状态；HITL 超时兜底（120s 自动恢复）。
+| 特性 | 说明 |
+|------|------|
+| 🗣️ **多轮辩论 Multi-Round Debate** | 多个专家 Agent 跨轮次交锋，由 Moderator 逼近共识，而非一次性问答。 |
+| 🕸️ **状态机编排脊柱 State-Machine Spine** | 9 值状态机 + checkpoint/resume + 条件路由（显式 `route*` 方法驱动），崩了能从最近节点续跑。 |
+| 🤖 **真 LLM Moderator（env-gated）** | 支持 LongCat-2.0 / LM Studio / OpenAI 兼容协议；失败自动降级 mock。 |
+| 🔐 **加密的 Provider Key 管理** | AES-256-GCM 静态加密；密钥绝不落日志、绝不返回前端；UI 掩码 `sk-L••••5678`。 |
+| 🛠️ **Provider 管理后台** | `/admin` 下的 LLM Provider 运行时 CRUD；带延迟的连接测试；一键启用/禁用。 |
+| 🚀 **配置向导 Setup-Wizard** | 3 步完成首次配置（选择 Provider → 配置 → 测试连接）。 |
+| 🔒 **RBAC + 审计** | 4 级平台角色（super_admin / enterprise_admin / department_admin / user）+ 全链路审计日志。 |
+| 📊 **加权多维评分** | 4 种预设 workflow 驱动不同维度权重；评分快照落库可审计。 |
+| 🧠 **蒸馏式 Memory** | Reviewer / Project 蒸馏 profile（非聊天历史）+ 多轮 rolling summary 压缩。 |
+| 📝 **版本化 Prompt** | 4 层组装（base/task/context/format）+ 版本注册表 + 回滚。 |
+| 📄 **Markdown 导出** | 正式评审报告一键导出，含评分小节。 |
+| 🔍 **来源可观测 Provenance** | `providerSummary` 五态来源追踪：`mock / lmstudio / openai_compatible / fallback_mock / failed`。 |
+| 🛡️ **硬闸兜底 Hard-Gate** | `max_rounds` / `max_turns_per_reviewer` 收敛硬闸，杜绝无限讨论。 |
+| 🧹 **内存安全** | 终态自动清理运行时状态；HITL 超时兜底（120s 自动恢复）。 |
 
 ---
 
@@ -56,7 +83,7 @@
                          ┌──────────────────────────────────┐
                          │  apps/api   (NestJS 10)            │
                          │  ┌────────────────────────────┐  │
-                         │  │  ReviewOrchestrator         │  │  ← graph 编排脊柱
+                         │  │  ReviewOrchestrator         │  │  ← 状态机编排脊柱（显式 route* 方法驱动，非通用图遍历）
                          │  │   · 9-state machine         │  │
                          │  │   · checkpoint / resume      │  │
                          │  │   · HITL interrupt/resume    │  │
@@ -80,6 +107,8 @@
 ```
 
 > 模块化单体（modular monolith），不拆微服务。当前所有编排在 `apps/api` 进程内完成（~8,100 LOC）；`AgentRuntime` 独立 worker 进程抽取列入 P6 规划，接口已预留。
+
+> **`apps/worker/`（Python Celery）当前为 P6 预留的骨架代码，与 `apps/api` 零接线，不参与运行。** 详细说明见 [`apps/worker/README.md`](apps/worker/README.md)。`apps/api/package.json` 中的 `bullmq` / `@nestjs/bullmq` 死依赖已移除，运行时队列由 `queue.service.ts` 内存实现承接（P6 接线时再引入 broker）。
 
 ---
 
@@ -105,7 +134,7 @@ cd apps/api && pnpm prisma:generate && pnpm prisma:migrate deploy && pnpm prisma
 pnpm dev
 ```
 
-打开 **http://localhost:3000**，点击 **"创建 Mock 演示评审"**，一条完整的 create → diagnose → multi-round debate → report 链路就跑通了，全程纯 mock、不需要任何 API Key。不点击也行，用脚本一键：
+打开 **http://localhost:3000**，点击 **"创建 Mock 演示评审"**，一条完整的 `create → diagnose → multi-round debate → report` 链路就跑通了，全程纯 mock、不需要任何 API Key。不点击也行，用脚本一键：
 
 ```bash
 node scripts/setup-demo-review.js          # 纯 mock，最快验证
@@ -175,7 +204,7 @@ node dist/main.js
 
 ---
 
-## 🤔 设计思路（为什么这样做）
+## 🤔 为什么这样做（设计思路）
 
 > 以下节选自 [docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md](docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md) §2 三项承重决策。
 
@@ -191,8 +220,21 @@ node dist/main.js
 | 产出 | 结构化报告 + 加权评分 + Markdown 导出 | 自由文本，难量化 | 会议纪要，风格因人而异 | 需自行组装 |
 | 溯源 | 每条意见溯源到 Agent + 模型 + provider 类型 | 无 | 难 | 框架依赖 |
 | 成本 | 默认零（mock） | 按 token 计费 | 人力 $$$ | 需自建可观测 |
-| 停机恢复 | checkpoint → 任意节点续跑 | 无 | 重开一场 | LangGraph 支持，CrewA​I 弱 |
+| 停机恢复 | checkpoint → 任意节点续跑 | 无 | 重开一场 | LangGraph 支持，CrewAI 弱 |
 | 工程定位 | 编排脊柱（own orchestration） | 端点 | 流程 | 框架 |
+
+---
+
+## 🧪 质量保障
+
+每次 PR 自动运行（见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)）：
+
+- ✅ **TypeScript 类型检查**（`apps/api` + `apps/web`，0 error 门禁）
+- ✅ **53 项 Jest 单元测试**（编排状态机、Moderator 决策、幂等、硬闸、评分等核心逻辑）
+- ✅ **冒烟脚本**（16 个 `scripts/*.js` 验证主链路自愈）
+- ✅ **密钥扫描**（提交前检测硬编码密钥）
+
+> 2026-07-16 完成一轮独立代码审查（[报告](docs/coordination/Review_2026-07-16_Report.md)）：修复 SSRF 防护与 Provider 白名单、补全 RBAC 注解、HITL 崩溃安全恢复、清理死依赖，所有 P2 风险已闭环。
 
 ---
 
@@ -234,10 +276,10 @@ node dist/main.js
 
 [MIT](LICENSE) © 2026 feather100。
 
-是否觉得 PrismReview 有意思？欢迎 **Star ⭐** 持续关注，或直接到 [Discussions](https://github.com/feather100/PrismReview/discussions) 打个招呼 / 提出想要的功能。
+觉得 PrismReview 有意思？欢迎 **Star ⭐** 持续关注，或直接到 [Discussions](https://github.com/feather100/PrismReview/discussions) 打个招呼 / 提出想要的功能。
 
 ---
 
 ### 推荐 GitHub Topics
 
-如果你正准备分享这个项目，把这些 topic 加到仓库 About 里能显著提升搜索曝光：`multi-agent`, `code-review`, `llm`, `nestjs`, `nextjs`, `ai-orchestration`, `debate`, `rag`.
+如果你正准备分享这个项目，把这些 topic 加到仓库 About 里能显著提升搜索曝光：`multi-agent`, `code-review`, `llm`, `nestjs`, `nextjs`, `ai-orchestration`, `debate`, `rag`。

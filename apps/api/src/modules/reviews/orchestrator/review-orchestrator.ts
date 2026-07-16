@@ -94,9 +94,32 @@ export class ReviewOrchestrator implements OnModuleInit {
   }
 
   /** 模块初始化：把 queue 的完成回调接到编排脊柱（single-round converge）。 */
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.queue.completionHook = (reviewId: string) => this.handleTurnsComplete(reviewId);
     this.logger.log('ReviewOrchestrator wired to QueueService.completionHook');
+    // F2：崩溃恢复 —— 扫描 DB 中 status='interrupted' 的 review，重建内存标志 + 重挂 120s 超时兜底 timer。
+    await this.recoverInterruptedReviews();
+  }
+
+  /**
+   * F2 崩溃恢复：进程重启后，从 review 表状态重建 interrupted 标志并重新挂上
+   * 120s 超时自动恢复 timer。幂等：已存在的 entry 不重复注册（clearInterruptTimer 防重）。
+   */
+  private async recoverInterruptedReviews(): Promise<void> {
+    const interrupted = await this.prisma.review.findMany({
+      where: { status: 'interrupted' },
+      select: { id: true, currentRound: true },
+    });
+    if (interrupted.length === 0) return;
+    for (const r of interrupted) {
+      // 幂等：重复 recover 不产生副作用（Map.set 覆盖同一值，timer 会被 clearInterruptTimer 先清）
+      this.runningReviews.set(r.id, { interrupted: true });
+      this.scheduleInterruptTimeout(r.id, r.currentRound ?? 1);
+    }
+    this.logger.warn(
+      `F2 recovery: re-armed HITL timeout for ${interrupted.length} interrupted review(s) ` +
+        `(INTERRUPT_TIMEOUT_MS=${this.INTERRUPT_TIMEOUT_MS}ms)`,
+    );
   }
 
   /** 模块销毁：清理所有 pending HITL timeout timers（防内存泄漏）。 */
@@ -146,27 +169,18 @@ export class ReviewOrchestrator implements OnModuleInit {
       // Défense : attente que l'utilisateur soumette sa défense / complément.
       pending_defense: async () => ({ status: 'summarized', currentNodeId: 'pending_defense' }),
     };
+    // F1/F3 显式状态转移表（由 orchestrator 方法硬编码驱动，非 edges 数组遍历）：
+    //   created      ──▶ diagnosed                     （start 起点）
+    //   diagnosed    ──▶ running                       （nodeRunning 派发 round-1）
+    //   running      ──▶ summarized                    （handleTurnsComplete：Moderator 决策）
+    //   summarized   ──▶ completed | aborted | running | tool_node | pending_defense
+    //                                   （routeAfterSummarized(s.lastDecisionType, defenseCount)）
+    //   running      ──▶ failed                        （执行异常）
+    //   tool_node    ──▶ summarized                    （tool_approval stub）
+    //   interrupted  ──▶ running | summarized          （resume / human_override；标志位内存保存 + F2 崩溃恢复）
+    // 终态闭集（graph-runtime TERMINAL_STATUSES）：completed / failed / aborted / archived。
     return {
       nodes,
-      edges: [
-        { kind: 'static', from: 'created', to: 'diagnosed' },
-        { kind: 'static', from: 'diagnosed', to: 'running' },
-        { kind: 'static', from: 'running', to: 'summarized' },
-        // P2-3：summarized 的下一节点由 ModeratorDecision.decisionType 条件路由
-        // （读 s.lastDecisionType），不再硬编码 completed。continue_debate→running(r2)
-        // 分支留空（9.5b 填）。
-        {
-          kind: 'conditional',
-          from: 'summarized',
-          route: (s) => routeAfterSummarized(s.lastDecisionType ?? 'converge', s.defenseCount ?? 0),
-        },
-        { kind: 'static', from: 'running', to: 'failed' },
-        // P4 (Sprint 5.2) Tool 节点边（stub）：tool_approval 后进入 tool_node，完成后回到 summarized。
-        { kind: 'static', from: 'tool_node', to: 'summarized' },
-        // P4 (Sprint 5.2) HITL 中断边（stub）：interrupted 后可 resume→running 或 human_override→summarized。
-        { kind: 'conditional', from: 'interrupted', route: (s) => 'running' },
-        { kind: 'conditional', from: 'interrupted', route: (s) => 'summarized' },
-      ],
       start: 'created',
     };
   }
@@ -592,6 +606,9 @@ export class ReviewOrchestrator implements OnModuleInit {
     const reviewAny = review as unknown as {
       currentRound?: number;
       currentNodeId?: string | null;
+      mentionExpertCode?: string | null;
+      mentionDirection?: string | null;
+      defenseCount?: number;
     };
 
     return {
@@ -599,6 +616,9 @@ export class ReviewOrchestrator implements OnModuleInit {
       status: review.status as ReviewState['status'],
       round: reviewAny.currentRound ?? 1,
       currentNodeId: reviewAny.currentNodeId ?? 'running',
+      mentionExpertCode: reviewAny.mentionExpertCode ?? undefined,
+      mentionDirection: reviewAny.mentionDirection ?? undefined,
+      defenseCount: reviewAny.defenseCount ?? 0,
       turns: turnsRaw.map((t) => {
         const tt = t as {
           id: string;
@@ -637,6 +657,7 @@ export class ReviewOrchestrator implements OnModuleInit {
         status: state.status,
         currentNodeId: state.currentNodeId,
         currentRound: state.round,
+        defenseCount: state.defenseCount ?? 0,
       },
     });
   }
