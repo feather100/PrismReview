@@ -7,179 +7,51 @@
 
 ## 当前状态
 
-- **Current Sprint**: P6 起步路线图已生成 — Sprint A（前端产品化）待启动；P1–P5 收官 + 审查报告修复已完成并推送
-- **Phase**: P1–P5 完整收官（commit 5e8dbd9）；P6（规模化 + 生产硬化）待启动
-- **Status**: ✅ All P1–P5 Go + README/CONTRIBUTING/ARCHITECTURE 同步更新 + LongCat POC pass（fail-closed 生效）
-- **Last Updated**: 2026-07-15
+- **Current Sprint**: Sprint 11.0 — Phase 3（阶段 3 壁垒落地）：T1–T6 全部完成并合入 main
+- **main**: `473e1a3`（已推送）；`tsc` 0 error / `jest` 182/182
+- **数据库**: Postgres（docker-compose）已迁移 16/16（T1/T2/T4 + Sprint 10.1 实跑应用）
+- **Last Updated**: 2026-08-03
 - **Owner**: Codex 协调
 
 ---
 
-## P6 路线图（3 个 Sprint，待启动）
+## 阶段 3 任务进度（详见 docs/research/phase3-task-list-20260803.md）
 
-详见 [docs/roadmap/Next_Steps.md](docs/roadmap/Next_Steps.md)。概括：
+| 任务 | 内容 | 状态 |
+|------|------|------|
+| T1 | 意见生命周期 + 内容键去重 | ✅ |
+| T2 | 收敛信号显式化（allAgree/noNewArguments/maxRounds） | ✅ |
+| T3 | 评分纪律 + 通胀检测 | ✅ |
+| T4 | 观察/判断分离（ScoringPass） | ✅ |
+| T5 | 按动作降级 | ✅ |
+| T6 | 成本硬闸 + 强制收敛 | ✅ |
+| T7 | 可升级辩论（未收敛 → 扩容 → 转人工） | 🔜 下一步 |
+| T8–T11 | 风险分级 HITL / 段落锚点 / 校准对照 / 并发加固 | ⏳ P1 |
+| T12–T14 | 滚动上下文 / 分层 / 复评闭环 | ⏳ P2 |
 
-| Sprint | 范围 | 状态 |
-|--------|------|------|
-| A | 前端产品化重设计 + Dashboard（2 周） | 🔜 待启动 |
-| B | 可观测性 + CI 稳定 + Jest 单测覆盖（2 周） | 🟡 依赖 A |
-| C | BullMQ worker 抽取 + 进程边界（2 周） | 🟡 依赖 B |
+## 相关文档索引
 
----
+- 交付文档：`docs/coordination/Sprint_11.0_T1~T6_*.md`（每任务一篇）+ `Sprint_11.0_Summary.md`
+- 交接文档：`docs/coordination/Sprint_11.0_Continuity_Handoff.md`（T7 起点，开工前必读）
+- 部署/迁移：`docs/coordination/Deployment_Migration_Checklist.md`
+- 调研基线：`docs/research/`（phase1-patterns / phase3-task-list / verified-facts / score-credibility / gold-standard-kit）
 
-## P1 已完整收官
+## 下一步（T7：可升级辩论）
 
-Sprint 9.0 ~ 9.5b（commit `05c9bbf`）完整落地 P1 编排脊柱：状态机 + graph runtime + mock Moderator + checkpoint + round-1/2/多轮/max_rounds 兜底。
+- 起点：main（473e1a3）→ 建 `codex/t7-escalation`
+- 接入点：moderator.ts 决策链（round≥2 未收敛 → escalate）+ `routeAfterSummarized` + HITL（interrupted + 120s 超时已有）
+- 验收：高争议评审 → 自动扩容 → 未决转人工
 
----
+## 环境要点
 
-## 当前目标
+- 数据库：`docker compose up -d postgres`；迁移状态 `npx prisma migrate status`（应为 up to date）
+- migrations 目录被 gitignore（仓库惯例，不入库）；改 schema 后手写迁移 + `prisma migrate deploy`
+- 测试：`cd apps/api && npx jest`（182 例基线）；类型：`npx tsc --noEmit`
+- 分支纪律：`codex/tX-*` → 提交推送 → `git checkout main && git merge --no-ff` → push main
 
-**Sprint 5.0 — Platform RBAC Enforcement + User Management + Audit Logging**（workbuddy-coder 实现，标准 Gate；基线 `c247b1b`，2026-07-14）：
+## 遗留事项
 
-- **① RBAC 基础设施落地**：新建 `@RequirePermissions(...)` 装饰器（`common/decorators/permissions.decorator.ts`）+ `PermissionsGuard`（`common/guards/permissions.guard.ts`，OR 语义、Reflector 驱动）；在 `app.module.ts` 以 `APP_GUARD` 注册 `JwtAuthGuard`（认证）→ `PermissionsGuard`（鉴权）两级全局守卫。
-- **② JwtAuthGuard 补 permissions**：改造为 `@Injectable()`，注入 `AuthService.getPermissions()` 填充 `user.permissions`（mock 用户默认 `enterprise_admin` 全量权限；真实用户从 `platformRole` 映射），闭合 `current-user.decorator.ts` 早有的 `permissions` 字段但从未填充的缺口。
-- **③ Audit 基础设施**：新建 `AuditService` + `AuditInterceptor`（全局，仅 POST/PATCH/DELETE 留痕、非阻塞 `.catch`、跳过 `/audit` 自身防死循环）；`action` 由路由相对路径推导（`review.created`/`user.updated`/`user.role_changed` 等），`detail` 按 §2.3 规则填充；新增 `GET /api/audit` 带租户隔离（`super_admin` 例外）+ `audit.read` 权限保护。
-- **④ Users 管理 API**：新建 `modules/users/`（CRUD + DTO×4），RBAC 矩阵 `list/get=role.read`、`create/patch=role.write`、`delete=role.delete`；`passwordHash='mock_password_hash'`（红线 #3，不引入 bcrypt）；软删 `status='disabled'`；创建时同租户邮箱去重（`EMAIL_ALREADY_EXISTS`）+ 部门存在性校验（`DEPARTMENT_NOT_FOUND`）。
-- **⑤ RBAC 示范标注**：`reviews.controller.ts` POST /reviews 加 `@RequirePermissions('review.create')`；`roles.controller.ts` 全量按 §2.5 权限矩阵标注（`role.read`/`role.write`/`role.delete`）；`auth/knowledge/quality` 控制器的本地 `@UseGuards(JwtAuthGuard)` 移除（全局 APP_GUARD 接管，避免未导入 AuthModule 的 DI 失败）。
-- **⑥ 验证全绿**：`tsc(api+web)` 0 errors；`prisma migrate status` up to date（零 migration）；`smoke-runtime.js` 31/31；`verify-sprint-5-rbac-audit.js` **22/22**（T1–T20）；`verify-9.5b-multiround.js` 22/22；`verify-review-history.js` 16/16；`verify-quality.js` 32/32；密钥扫描干净（git grep exit=1，无敏感文件入库）。
-- **⑦ 红线守住**：未改 schema（零迁移）；未改 `apps/web`（前端零改动）；未写密钥；`passwordHash` 仅 `mock_password_hash`、未引入 bcrypt；未执行 `git commit`/`git push`；未 `--force`。
-- 产出 `docs/coordination/Sprint_5.0_Platform_RBAC_Audit_Backend.md`（权威任务文档，本次新增/滚动）+ 本文件滚动到 5.0。**未执行 git commit / push**（标准 Gate 红线，待 Codex 标准 Guard 复审）。
-
----
-
-## Sprint 5.1 — P3 Prompt + Memory（workbuddy-coder 实现，标准 Gate；基线 `332b5b0`，2026-07-14）
-
-**目标**：在 P1 编排脊柱之上，补 Prompt 版本化（四层 base/task/context/format）+ 四层蒸馏 Memory（Reviewer / Project）+ mock Knowledge 检索，使每次评审可溯源 prompt 版本、跨评审累积 reviewer 蒸馏 profile 与 project 决策记忆；蒸馏与压缩均为确定性规则（绝不调用真实 LLM、绝不存聊天历史）。
-
-- **① Prompt 版本化**：新建 `modules/prompt/`（Contract §2）。`PromptServiceImpl.compose()` 四层组装 system（base→task→context→format），user 保留 `You are reviewing as {roleCode}.` 前缀（下游 mock 适配器据此提取角色，保证 9.5b 等回归不破）；`templateRefs` 随 `ReviewOpinion.promptRefs` 落库。支持 `registerTemplate`（版本自增，旧版不可变）/ `getActiveTemplate` / `getTemplateHistory` / `rollbackTo`（复制历史内容为新版本）。
-- **② Memory 四层蒸馏**：新建 `modules/memory/`。`updateReviewerProfile` 按 roleCode 聚合维度置信度 + 确定性偏见检测（high-risk 占比 >50%），`ReviewerMemory` 仅存蒸馏 profile（维度擅长 / 偏见摘要），**绝不存 opinion.issue 等聊天历史原文**；`updateProjectMemory` 从 `report.actionItems` 提取 decisions；`compressRoundContext` 多轮（round≥3）截断前序发言为滚动摘要（mock 截断，不调 LLM）。
-- **③ Knowledge mock**：改造 `modules/knowledge/` 加 `searchRelevantChunks()`（返回空数组）/ `getKnowledgeContext()`（返回 `KB 未配置`）。
-- **④ 编排注入**：`graph-runtime.ts` NodeCtx 注入 `promptService/memoryService/knowledgeService`；`queue.service.ts` 的 `executeAgentTurn` 调 `compose()` 替代硬编码 prompt，结果写入 `promptRefs`；`review-orchestrator.ts` 的 `handleTurnsComplete`（summarized 节点）调 `updateReviewerProfile` / `updateProjectMemory` / `compressRoundContext`（round≥3），整体 `try/catch` 兜底（memory 写失败不阻塞 review 主流程）；`app.module.ts` / `reviews.module.ts` 注册 `PromptModule` + `MemoryModule`。
-- **⑤ 数据迁移（首次）**：`seedPresetPromptTemplates()` 把 `AgentRoleVersion.systemPrompt` 同步为 `PromptTemplateRecord` base/task/format v1.0（幂等，覆盖所有 preset/custom 角色）。
-- **⑥ 验证全绿**：`tsc(api+web)` 0 errors；`prisma migrate status` up to date（1 新 migration：`20260714103558_add_p3_memory_prompt`）；`smoke-runtime.js` 31/31；`verify-sprint-5.1-prompt-memory.js` **20/20**（T1–T18）；`verify-9.5b-multiround.js` 22/22；`verify-review-history.js` 16/16；`verify-quality.js` 32/32；`verify-sprint-5-rbac-audit.js` 22/22；密钥扫描干净（git grep exit=1，无敏感文件入库）。
-- **⑦ 红线守住**：schema delta 仅 Contract §6 声明（3 新表 + `ReviewOpinion.promptRefs`）；未改 `apps/web`；未写密钥、未引入 bcrypt/jwt 新依赖；未执行 `git commit`/`git push`；未 `--force`；memory 不存聊天历史。
-- 产出 `docs/coordination/Sprint_5.1_P3_Prompt_Memory_Contract.md`（权威契约）+ `Sprint_5.1_P3_Prompt_Memory_Implementation.md`（实现规格）+ 本文件滚动到 5.1。**未执行 git commit / push**（标准 Gate 红线，待 Codex 标准 Guard 复审）。
-
----
-
-## Sprint 5.2 — P4 Tool + HITL（workbuddy-coder 实现，标准 Gate；基线 `0f56520`，2026-07-14）
-
-**目标**：在 P1 编排脊柱 + P3 Prompt/Memory 之上，引入 (1) env 门控的 LlmModerator（替代写死的 MockModerator，LLM 失败降级 Mock）；(2) ToolRegistry + ToolDefinitionRecord（mock 工具执行，绝无真实 MCP SDK）；(3) HITL 真正中断/恢复编排器（非仅 DB 状态翻转）；(4) 人类回合覆盖 API（source='human'，A2A 禁止 reviewer 调工具，人类走独立通道）；(5) 报告叙事字段（narrative）。
-
-- **① env 门控 Moderator 工厂**：`reviews.module.ts` 经 `MODERATOR_TOKEN` + `useFactory: createModeratorWithEnv(prisma, promptService)` 注入；`MODERATOR_PROVIDER=llm && ALLOW_EXTERNAL_MODEL_CALLS=true` → `LlmModerator`，否则（含 `llm` 无 allow）fail-closed → `MockModerator`；`ReviewOrchestrator` 第 4 构造参从 `MockModerator` 改为 `Moderator` 接口（DI 令牌注入）。
-- **② LlmModerator**：实现共享 `Moderator` 接口 `decide(state, gates)` / `narrate` / `proposeTools` / `sanityCheck` / `fallbackDecision`；`sanityCheck` 走 `computeRuleCheck` 硬闸（maxRounds/maxTurnsPerReviewer/minRounds/maxTokens/maxCost，代码强制，LLM 不可越界）；失败/解析异常 → `fallbackDecision`（无真实 LLM 依赖）；`ModeratorDecision` 新列 `proposedTools`/`toolApprovalReasoning`/`llmRawOutput`/`sanityCheckResult` 落库。
-- **③ ToolRegistry（mock，无真实 MCP）**：`modules/tool/tool.registry.ts` + `tool.module.ts`，`registerTool`/`listAvailableTools`/`executeTool`/`getApprovalLog`；`executeTool` 返回 mock 桩（`knowledge_search` → `{chunks:[]}`），`ToolCallRequest` 落库 `status='completed'`；schema 新增 `ToolCallRequest` + `ToolDefinitionRecord` 两表。
-- **④ HITL 真正中断/恢复**：`ReviewOrchestrator.interrupt(reviewId)` 置 `runningReviews` 标志 + 运行中即 park（checkpoint 'interrupted' + status 翻转 + 审计 `ModeratorDecision('tool_approval','HITL manual interrupt')`）；`resume(reviewId)` 校验当前 `interrupted` 状态、清标志、checkpoint 'running' + 重派发 `review.start`；`nodeRunning`/`handleTurnsComplete` 加中断守卫（interrupted → 不派发、parked）；graph `tool_node`/`interrupted` 桩节点 + 条件边（interrupted→running/summarized）。
-- **⑤ 人类回合覆盖 API**：`POST :reviewId/meetings`（`@RequirePermissions('review.write')` → `submitHumanTurn`）；断言 running/interrupted，按 `(reviewId,'human',round)` 幂等键建 `ReviewTurn(phase='human', roleVersionId=valid UUID)` + `ReviewOpinion(source='human')`；interrupted → `orchestrator.resume`，否则 `queueService.checkMeetingComplete`（已置 public）；`GET :reviewId/tool-requests`（`review.read` → `toolRegistry.getApprovalLog`）；`report-response.dto` 加 `narrative`（来自最新 `converge` `ModeratorDecision.reasoning`）。
-- **⑥ 审计增强**：`audit.interceptor.ts` 新增 `POST .../meetings` → `review.human_turn`。
-- **⑦ 数据迁移（1 新）**：`20260714114906_add_p4_tool_hitl`（schema delta 严格限 Contract §5：仅 `ModeratorDecision` 加列 + `ReviewOpinion.source` + 两新表 + `Review.toolCallRequests` 反向关系）。
-- **⑧ 验证全绿**：`tsc(api+web)` 0 errors；`prisma migrate status` up to date（1 新 migration：`20260714114906_add_p4_tool_hitl`）；`smoke-runtime.js` 31/31；`verify-sprint-5.2-tool-hitl.js` **27/27**（T1–T22）；`verify-9.5b-multiround.js` 22/22；`verify-review-history.js` 16/16；`verify-quality.js` 32/32；`verify-sprint-5-rbac-audit.js` 22/22；`verify-sprint-5.1-prompt-memory.js` 20/20；密钥扫描干净（仅 `MODERATOR_TOKEN='MODERATOR_SERVICE'` DI 令牌，无真实密钥；baseline .env/seed 测试密钥未触碰）。
-- **⑨ 红线守住**：未改 `apps/web`（前端零改动，`next build` standalone 仅 Windows symlink EPERM，与代码无关；`tsc web=0`）；未引入真实 MCP SDK / bcrypt；A2A 禁止（reviewer 不调工具，人类走独立通道）；`MODERATOR_PROVIDER` 门控且 LLM 失败降级 MockModerator；未执行 `git commit`/`git push`；未 `--force`；schema delta 仅 Contract §5 范围。
-- 产出 `docs/coordination/Sprint_5.2_P4_Tool_HITL_Contract.md`（权威契约）+ `Sprint_5.2_P4_Tool_HITL_Implementation.md`（实现规格）+ 本文件滚动到 5.2。**未执行 git commit / push**（标准 Gate 红线，待 Codex 标准 Guard 复审）。
-
----
-
-在 9.4（P1 编排脊柱 single-round，commit `7a8b4e6`）+ 9.5a（P1 多轮地基，修 P2-1~P2-4，未提交）+ 9.1 Contract + 9.2（schema）+ 9.3（枚举）基础上，实做 **P1 收官：多轮回合（round-2 + 多轮循环 + max_rounds 兜底）**（workbuddy-coder 实现，标准 Gate），闭合 9.5a review §8 三条须知悉项：
-
-- **① `continue_debate → running(r2)` 已实现**：`routeAfterSummarized` 的 `advance_round`/`continue_debate` 均返 `running`；`handleTurnsComplete` 新增 `next==='running'` 分支 → `currentRound++` + 派发 round-N（9.5a 留空的 `summarized` 空分支已闭合）。
-- **② `max_rounds` 每轮重校验双闸**：`Moderator.decide()` 在 `round >= maxRounds` 返 `force_stop`；`handleTurnsComplete` 派发前防御性 `if (nextRound > maxRounds) → force_stop→aborted`；起点闸（9.4/9.5a 既有）保留。满足 Contract §5.3"每转移前校验"。
-- **③ `advance_round` 也派发 round-2**：`advance_round` 与 `continue_debate` 统一路由到 `running` 节点，均触发 `currentRound++` + round-N 派发（9.5a 使 review 永久停留 `summarized` 的问题已修复）。
-- **round-2 mock debater**：`Moderator` 新增冲突检测启发式（本轮 ≥2 条 high-risk opinion → `continue_debate`）+ `detectConflict(reviewId, round)` 私有方法；`queue.service.ts` 派发 `phase: round>=2?'debate':'round_robin'`，`agent.turn.execute` jobId 带 `r${round}`；确定性、不依赖真实模型、`max_cost_per_review=0`。
-- **round-scoped 幂等与派发**：`checkMeetingComplete`/`executeMeetingComplete` 按 `review.currentRound` 过滤 terminal count、jobId 带 `.r${currentRound}`，杜绝 round 串扰与 round-2 误拦截（9.5a 单轮下不可见的多轮 correctness 关键）。
-- **多轮循环**：`[running→summarized]*→(completed|aborted)` 闭环，`summarized` 条件边读 `state.lastDecisionType` 驱动下一次路由。
-
-- 复用 9.4/9.5a 既有 `apps/api/src/modules/reviews/orchestrator/` 模块（graph-runtime / opinion / moderator / idempotency / hard-gates / postgres-checkpointer / review-orchestrator / index），本 sprint 仅改 `moderator.ts` / `review-orchestrator.ts` / `queue.service.ts` 三文件：
-- `ReviewOrchestrator` **包装**既有 `QueueService`（不替换）：经 `queue.completionHook` 注入回调，turn 全部终态后触发 `handleTurnsComplete` → mock Moderator `converge` → `completed`；每节点 `checkpointer.save`；
-- round-1 派发走 `QueueService.enqueue('review.start')`（既有 `executeReviewStart`/`executeAgentTurn` 内部含 DB 幂等 + 每评审员硬闸，零重写）；
-- mock Moderator（converge / continue_debate 冲突启发式 / advance_round / force_stop 四类决策）+ 硬闸（maxRounds=3 / maxTurnsPerReviewer=3 / minRounds=1 / maxTokens=200000 / maxCost=0）+ 每条决策落 `ModeratorDecision` 审计；
-- turn 幂等按**语义元组** `(reviewId, roleVersionId, round)` 查询（Codex 指令 1，CRITICAL），天然覆盖 3 段 `${rid}::${rvid}::${round}` 与 4 段 `${rid}::${rvid}::${round}::${N}` 键，不依赖 idempotencyKey 字符串相等；
-- opinion schema 运行校验（§4.2：schemaVersion 正则 / dimension / riskLevel 枚举 / issue / recommendation / citations / confidenceScore[0,100] 整数 / modelOutputRef 可 JSON.parse），失败 → turn failed + 失败存根；
-- checkpoint/resume：Postgres `ReviewCheckpoint`（sequence 单调，load 取最大 = resume 锚点）；
-- `queue.service.ts` 泛化 `applyPilotRoleCap` 语义为 `max_turns_per_reviewer`（硬闸 `shouldDispatchTurn`），与 §5.2 对齐；
-- 前端零改动（API 契约保留）；默认 mock（max_cost_per_review=0，不调真实 LLM）；
-- 验证：`apps/api/scripts/verify-9.5b-multiround.js` 对真实 Prisma + 真实 QueueService/ReviewOrchestrator/MockModerator 实例断言 **22/22**（S0 单轮回归 4 + S1 三轮回合到顶 aborted/currentRound=3/决策序列 continue_debate×2+force_stop/turn round 1,2,3/debate phase/第4轮不派发/per-node checkpoint/审计 passed/幂等 3 段+4 段键 + P2-1 一致性 + S2 2 轮回合 + S3 advance_round 派发 round-2）；standing `scripts/smoke-runtime.js` **31/31** 回归；tsc(api+web) 0 errors；Docker Postgres healthy；migrate deploy up to date（零迁移）；密钥扫描干净（仅历史 docs 脱敏占位符，本次代码零命中）；
-- 产出 `docs/coordination/Sprint_9.5b_MultiRound_Debate_Backend.md`（实现记录，新增）+ 本文件滚动到 9.5b。**未执行 git commit / push**（标准 Gate 红线，待复审）。
-
-> 9.3 已 Go（commit `c7158ab`）：枚举物理重命名 + 前后端 6 处引用 + idempotencyKey 语义键回填修正，为 9.4 的 graph 脊柱铺好 `Review.status` 文本列与枚举集。9.5（round-2 debate / 多轮 / ModelAdapter(P2) 等）明确在范围外，本次未触碰。
-- 新增 `ReviewCheckpoint` / `ModeratorDecision` 两表；`ReviewTurn` / `ReviewOpinion` / `Review` 仅加列（`round` / `idempotencyKey` / `schemaVersion` / `currentRound` / `currentNodeId` + 反向关系）；
-- 生成并实跑 Prisma 迁移 `20260713121800_add_orchestrator_spine_schema`，回填历史 324 行 `review_turns`（NOT NULL + UNIQUE 约束可被满足）；
-- 修复 2 个 `reviewTurn.create` 写入点（含任务原假设遗漏的 standalone runner 脚本），使加性约束下系统不破；
-- tsc 0 errors；Docker 全栈实跑；seed + 3 路冒烟（runtime / route A / route B）全绿；密钥扫描干净；
-- 产出 `docs/coordination/Sprint_9.2_Schema_Migration_Backend.md`（证据）；**未执行 git commit / push**（标准 Gate 红线，待复审）。
-引用 9.1 Contract（`10cec39` 基线之上）+ 现有代码 `apps/api/prisma/schema.prisma`、`queue.service.ts`、`scripts/run-agent-turns-for-review.js`。**不触碰 `REVIEW_STATUS_FLOW`、不改枚举、不实现 graph runtime / Moderator / round-2（均属 9.3）。**
-- 新增 `docs/coordination/Sprint_9.1_Orchestrator_Spine_Contract.md`（主文档：状态机 / graph runtime 接口 / turn schema / Moderator 契约 / checkpoint schema / Prisma delta / API 契约保留 / 模块边界 / round-2 mock debater / 技术边界 / 验证期望 / Gate 声明，共 13 节）；
-- 滚动本文件到 9.1，并将 9.0 行从 In Progress 推进为 **Go**（commit `bbed578`，已推送），新增 9.1 In Progress 行。
-引用 9.0 已 Go 的架构权威（`bbed578`）+ 现有代码 `apps/api/prisma/schema.prisma`、`reviews.service.ts`、`queue.service.ts`、`scripts/run-agent-turns-for-review.js`、`scripts/setup-demo-review.js`。**不改业务代码、不运行模型、不写密钥、未执行 git commit。**
-
----
-
-## 当前输入文档
-
-- `docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md`（架构权威，9.0 Go，`bbed578`）
-- `docs/coordination/ACTIVE_SPRINT.md`（上一跳 9.0，本次滚动到 9.1）
-- `docs/coordination/AGENT_COORDINATION_PROTOCOL.md`（§2 标准流程 / §4 命名 / §5 红线 / §6 Gate / §7 快速 Gate）
-- `apps/api/prisma/schema.prisma`（现有 Review / ReviewTurn / ReviewOpinion 模型 — Contract 的 schema delta 基于此）
-- `apps/api/src/modules/reviews/reviews.service.ts`（现有 `REVIEW_STATUS_FLOW`、diagnose/start/summarize/getReport/exportMarkdown）
-- `apps/api/src/modules/reviews/queue/queue.service.ts`（现有 QueueService：review.start → agent.turn.execute → meeting.complete、idempotent skip、applyPilotRoleCap）
-- `scripts/run-agent-turns-for-review.js` / `scripts/setup-demo-review.js`（现有 runner / demo 脚本）
-- `docs/demo/MVP_Demo_Runbook.md`（API 契约保留边界）
-
----
-
-## 当前输出文档
-
-- `docs/coordination/Sprint_9.1_Orchestrator_Spine_Contract.md`（9.1 主契约，9.4 的输入基线）
-- `docs/coordination/Sprint_9.4_Orchestrator_Spine_Backend.md`（9.4 实现记录）
-- `docs/coordination/Sprint_9.5a_MultiRound_Foundation_Backend.md`（9.5a 多轮地基实现记录）
-- `docs/coordination/Sprint_9.5b_MultiRound_Debate_Backend.md`（9.5b 多轮回合实现记录，新增）
-- `docs/coordination/ACTIVE_SPRINT.md`（本文件，滚动到 9.5b）
-
----
-
-## 红线
-
-- **改业务代码（本次允许，标准 Gate 范围）**：新增 `orchestrator/` 模块、编辑 `queue.service.ts`/`reviews.service.ts`/`reviews.module.ts`；但**不写密钥**、**不改 schema**（9.2 已加列，9.4 零迁移）、**不改前端**（API 契约保留）、**不改 `REVIEW_STATUS_FLOW` 既有枚举语义**。
-- **不运行真实 LLM**：默认 mock provider（`max_cost_per_review=0`）；dev-only lmstudio 试点受 §7 守卫，本次不启用（`MODEL_PROVIDER` 保持 unset/mock）。
-- **不写密钥**：仅描述 env 守卫语义；`provider-adapter` 的 `Authorization` 头拼接处不打印；`MODEL_API_KEY` 不落库/不提交。
-- **不越界 P2+（9.5b 范围外）**：9.5b 实现 round-2 mock debater（冲突启发式 + phase='debate' 确定性派发）+ 多轮 `[running→summarized]*` 循环 + `max_rounds` 每轮兜底；**不实现**真 LLM Moderator(P2) / `ModelAdapter` 泛化(P2) / `Memory`·`Prompt` Service(P3) / `Tool`·`HITL`(P4) / opinion 校验规则改动 / 任何 schema 变更 / 前端改动。三条 9.5a 须知悉项（`continue_debate→running(r2)`、每轮 `max_rounds` 重校验、`advance_round` 派发 round-2）均已闭合。
-- **不执行 git commit / push**：标准 Gate 红线，待 Codex 交 `workbuddy-review` 复审后再决定。
-- **文档落点正确**：本实现记录与 `ACTIVE_SPRINT.md` 同目录 `docs/coordination/`。
-- 密钥扫描净：扫描仅命中历史 `docs/coordination` 脱敏占位符（`sk-xxxxxxxxxxxxxxxx`），非真实 Key、非本次文件；本次新增/修改源码零命中。
-
----
-
-## Gate 记录
-
-| Sprint | 状态 |
-|---|---|
-| 4.0-4.7 | 已通过 qoderwork 复审 |
-| 5.1-5.4 | Go（providerSummary 链路落地 + 文档刷新，qoderwork 复审通过） |
-| 5.5 | Go（后端 + 前端 5 个 UI 步骤均实测通过） |
-| 6.1B | Go（smoke-export 21/21 通过） |
-| 6.2 | Go（8 项重点全过；tsc 0 errors；后端导出实跑 2323 字节非空 .md） |
-| 6.3 | Go（Workbuddy 快速 Gate 复审通过；§6 三项导出检查待 live demo 实测回填） |
-| 6.4 | Go（MVP Release Snapshot 锚点生成，纯文档） |
-| 7.0 | Go（真实 Provider 试点总合同；标准流程，7.1 spike 已验） |
-| 7.1 | Go（standalone lmstudio spike，8 项全过，2/2 角色成功，无 Key/出域，默认 mock 零影响） |
-| 7.1B | Go（spike hygiene 加固：DEBUG_PROVIDER_RAW 门控 + parse 失败 fail-closed，8 项全过） |
-| 7.2 | Go（dev-only queue 真实 provider 试点合同；标准流程，7.3 已落地） |
-| 7.3 | Go（实现 `MODEL_PILOT_MAX_ROLES` 硬约束 cap=3；默认 mock 零回归；smoke 全绿 + tsc 0 errors） |
-| 7.4 | Go（本地 LM Studio dev-only E2E 15/15 PASS；鲁棒性 5/5；单 review ≤3；无泄漏） |
-| 7.5 | Go（Demo 就绪冻结；文档语义已锚定，标准 Demo 零 LLM 依赖、LM Studio 仅 dev-only ≤3 capped、付费 API 未启用） |
-| **8.1** | **Go**（GitHub 引导完成并推送 `origin/main` `a4da677…`；`.gitignore` 全覆盖；无真实 Key/业务改动；快速 Gate 复审通过） |
-| **8.2** | **Go**（Repo Operating Rules 固化，已写入协议 §9；文档随 8.3 提交 `9dbcf97` 入库） |
-| **8.3** | **Go**（Documentation Sync Commit；6 个 coordination 文档提交并推送 `9dbcf97`，零业务改动、无真实 Key；workbuddy 快速 Gate 复审通过） |
-| **9.0** | **Go**（Architecture Refactor Kickoff；纯文档主文档 `Sprint_9.0_Product_Roadmap_Reset.md` + 本文件滚动到 9.0；fast-gate 复审通过，commit `bbed578` 已推送 `origin/main`） |
-| **9.1** | **Go**（P1 Orchestrator Spine Contract；纯文档 Contract `Sprint_9.1_Orchestrator_Spine_Contract.md` + 本文件滚动到 9.1；快速 Gate §7.1 复审通过，基线锚定 `10cec39`，9.2 实现走标准 Gate） |
-| **9.2** | **Go**（P1 Additive Schema Migration；2 新表 + 3 既模型加列 + Prisma 迁移实跑 + 历史回填 + 写入点修复；标准 Gate 复审通过，commit `ad5c6cf`） |
-| **9.3** | **Go**（P1 Enum Migration + Ref Update；workbuddy-coder 按 §7.6 物理重命名 `Review.status` 枚举 + 重写 `REVIEW_STATUS_FLOW` + 前后端 6 处引用更新 + 修正 9.2 idempotencyKey 回填为语义键；tsc(api+web) 0 errors、Docker 全栈实跑、migration deploy 成功、回填 0 行 PK、3 路冒烟全绿、密钥扫描干净；commit `c7158ab`，为 9.4 graph 脊柱铺好枚举环境） |
-| **9.4** | **Go**（P1 Orchestrator Spine（single-round）；graph runtime + ReviewOrchestrator + round-1 + mock Moderator + checkpoint + 幂等；commit `7a8b4e6`） |
-| **9.5a** | **Go**（P1 多轮地基；修 P2-1~P2-4：round 贯通 / minRounds 强制 / 条件边真路由 / ReviewStatus 补值；commit `12a6d3a`） |
-| **9.5b** | **Go**（P1 收官；round-2 mock debater + continue_debate + 多轮循环 + max_rounds=3 兜底演练；commit `05c9bbf`） |
-| **2.1** | **Go**（P2 Model Adapter 抽象层；ModelAdapter 接口 + Mock/AI 双适配器 + 多重护栏工厂；commit `cccb813`） |
-| **9.6** | **Go**（GitHub 门面文档；README 重写 + CONTRIBUTING + ARCHITECTURE；commit `cccb813`） |
-| **2.2** | **规划中**（P2 真 LLM Moderator 接线 + LM Studio Adapter 实测；待派） |
-| **9.5a** | **Go**（P1 Multi-Round Foundation（修 9.4 review P2-1~P2-4）；workbuddy-coder 实现 round 贯通 + minRounds 强制 + 条件边真路由 + ReviewStatus 补 interrupted/archived；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5a-multiround-foundation.js` 真实实例断言 15/15（P2-1/2/3/4 + 9.4 单轮回归）、standing smoke 31/31 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5a_MultiRound_Foundation_Backend.md` 已就位；9.5b 在其上闭合三条须知悉项，标准 Gate 复审建议 Go） |
-| **9.5b** | **Go**（P1 Multi-Round Debate Backend（P1 收官）；workbuddy-coder 在 9.5a 多轮地基上实现 round-2 mock debater（冲突启发式 + phase='debate'）+ 多轮 `[running→summarized]*` 循环 + `max_rounds` 每轮重校验双闸，闭合 9.5a review §8 三条须知悉项；改动 `moderator.ts`/`review-orchestrator.ts`/`queue.service.ts` 三文件，零 schema 变更、零前端改动、默认 mock、不调真实 LLM；tsc(api+web) 0 errors、`prisma migrate deploy` up to date、`apps/api/scripts/verify-9.5b-multiround.js` 真实实例断言 **22/22**、standing `smoke-runtime.js` **31/31** 全绿、密钥扫描干净（仅历史 docs 脱敏占位符）；证据文档 `Sprint_9.5b_MultiRound_Debate_Backend.md` 已就位；**未提交**，待 Codex 交 `workbuddy-review` 走标准 Gate 复审） |
-| **5.0** | **In Progress**（Platform RBAC Enforcement + User Management + Audit Logging；workbuddy-coder 落地 `@RequirePermissions`+`PermissionsGuard` 两级全局守卫、`JwtAuthGuard` 补 `permissions`、`AuditService`+`AuditInterceptor` 全量写操作留痕、`Users` 管理 API（RBAC 保护、`mock_password_hash`、软删）、`reviews`/`roles` RBAC 示范标注；零 schema 变更、零前端改动、`tsc(api+web)` 0 errors、`prisma migrate status` up to date、`smoke-runtime.js` 31/31、`verify-sprint-5-rbac-audit.js` **22/22**、`verify-9.5b-multiround.js` 22/22、`verify-review-history.js` 16/16、`verify-quality.js` 32/32、密钥扫描干净；证据文档 `Sprint_5.0_Platform_RBAC_Audit_Backend.md` 已就位；**未提交**，待 Codex 标准 Guard 复审） |
+- [ ] 取消 migrations 目录 gitignore 的讨论（建议入库）
+- [ ] CI 增加 `prisma migrate deploy` + `migrate status` 检查
+- [ ] e2e verify 冒烟（DB 已就绪可跑）
+- [ ] gold standard 人工收集（5 份脱敏文档 + 3 位专家）
