@@ -22,6 +22,21 @@ export interface ScoringWeights {
   readonly fallback: 'uniform' | 'confidence' | 'risk';
 }
 
+export interface ScoreDiscipline {
+  /** 默认锚定分（0–100；≈ 5.5/10，无充分理由不得显著高于此） */
+  readonly defaultAnchor: number;
+  /** 高分（>70）意见占比上限（0~1）；超过 → inflationWarning */
+  readonly maxAbove70Pct: number;
+  /** 高分是否须附带论证（prompt 纪律 + 报告标注） */
+  readonly requireJustificationAbove70: boolean;
+}
+
+export const DEFAULT_SCORE_DISCIPLINE: ScoreDiscipline = {
+  defaultAnchor: 55,
+  maxAbove70Pct: 0.3,
+  requireJustificationAbove70: true,
+};
+
 export interface VerdictThresholds {
   /** >= threshold → approved */
   readonly approved: number;
@@ -43,6 +58,8 @@ export interface WorkflowConfig {
   readonly availableTools: ToolType[];
   readonly scoringWeights: ScoringWeights;
   readonly verdictThresholds: VerdictThresholds;
+  /** T3：评分纪律（防通胀；缺省用 DEFAULT_SCORE_DISCIPLINE）。可选，兼容存量自定义配置 */
+  readonly scoreDiscipline?: ScoreDiscipline;
 }
 
 export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
@@ -66,6 +83,7 @@ export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
       fallback: 'uniform',
     },
     verdictThresholds: { approved: 75, conditionallyApproved: 50 },
+    scoreDiscipline: { defaultAnchor: 55, maxAbove70Pct: 0.3, requireJustificationAbove70: true },
   },
   'code-review': {
     id: 'code-review',
@@ -86,6 +104,7 @@ export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
       fallback: 'risk',
     },
     verdictThresholds: { approved: 80, conditionallyApproved: 55 },
+    scoreDiscipline: { defaultAnchor: 60, maxAbove70Pct: 0.25, requireJustificationAbove70: true },
   },
   research: {
     id: 'research',
@@ -106,6 +125,7 @@ export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
       fallback: 'uniform',
     },
     verdictThresholds: { approved: 70, conditionallyApproved: 45 },
+    scoreDiscipline: { defaultAnchor: 50, maxAbove70Pct: 0.3, requireJustificationAbove70: true },
   },
   thesis: {
     id: 'thesis',
@@ -126,6 +146,7 @@ export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
       fallback: 'uniform',
     },
     verdictThresholds: { approved: 75, conditionallyApproved: 50 },
+    scoreDiscipline: { defaultAnchor: 55, maxAbove70Pct: 0.3, requireJustificationAbove70: true },
   },
 };
 
@@ -183,6 +204,19 @@ export class WorkflowRegistry {
       }
       if (Math.abs(sum - 1) > 1e-6) {
         errors.push(`维度权重之和须 = 1（当前 = ${Number(sum.toFixed(4))}）`);
+      }
+    }
+
+    const sd = config?.scoreDiscipline;
+    if (sd) {
+      if (typeof sd.defaultAnchor !== 'number' || sd.defaultAnchor < 0 || sd.defaultAnchor > 100) {
+        errors.push('scoreDiscipline.defaultAnchor 须为 0~100 数值');
+      }
+      if (typeof sd.maxAbove70Pct !== 'number' || sd.maxAbove70Pct < 0 || sd.maxAbove70Pct > 1) {
+        errors.push('scoreDiscipline.maxAbove70Pct 须为 0~1 数值');
+      }
+      if (typeof sd.requireJustificationAbove70 !== 'boolean') {
+        errors.push('scoreDiscipline.requireJustificationAbove70 须为布尔');
       }
     }
 

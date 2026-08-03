@@ -274,11 +274,20 @@ model ReviewOpinion {
   promptRefs       Json?    @map("prompt_refs")
   // --- P4 (Sprint 5.2) Tool + HITL：意见来源（'llm' | 'human' | 'mock'）---
   source           String?  @default("llm") @map("source")
+  // --- T1 (Sprint 11.0) Opinion Lifecycle：状态机 + 内容键去重（candidate→challenged→accepted/rejected/downgraded）---
+  status           String   @default("accepted") @map("status") // candidate | challenged | accepted | rejected | downgraded；DB 默认 accepted 兼容存量数据，新意见创建时显式置 candidate
+  resolutionReason String?  @map("resolution_reason") // 迁移理由：duplicate_of:<id> / validation_failed / fail_closed / moderator:<reason>
+  dedupKey         String?  @map("dedup_key") // 内容键 = dimension:normalizedIssue（同题归并）
+  mergedReviewerIds Json?  @map("merged_reviewer_ids") // 被归并到本意见（canonical）的 reviewerId 列表
+  canonicalOpinionId String? @map("canonical_opinion_id") // 重复意见指向的 canonical opinion id
+  // --- T2 (Sprint 11.0) 收敛信号：评审员对争议的立场（agree/disagree/neutral），驱动全员 AGREE 收敛判定 ---
+  stance           String?  @default("neutral") @map("stance") // agree | disagree | neutral
 
   review Review     @relation(fields: [reviewId], references: [id])
   turn   ReviewTurn @relation(fields: [turnId], references: [id])
 
   @@index([reviewId])
+  @@index([reviewId, dedupKey])
   @@map("review_opinions")
 }
 

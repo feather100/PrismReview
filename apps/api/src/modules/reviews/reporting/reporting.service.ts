@@ -15,6 +15,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { ReportResponseDto, ReportScoringDto, ReportScoringDimension } from '../dto/report-response.dto';
 import { ScoringService, ScoringResult } from '../scoring/scoring.service';
 import { WorkflowRegistry } from '../../workflow/workflow.registry';
+import { isReportable } from '../orchestrator/opinion-lifecycle';
 import type { AuthUser } from '../../../common/decorators/current-user.decorator';
 
 @Injectable()
@@ -246,9 +247,12 @@ export class ReportingService {
     const versionToRole = new Map(roles.map((r) => [r.activeVersionId, { code: r.code, name: r.name }]));
     const turnToRole = new Map(turns.map((t) => [t.id, versionToRole.get(t.roleVersionId) ?? { code: 'unknown', name: 'Unknown' }]));
 
-    const opinions = dbOpinions.map((o) => {
+    // T1 (Sprint 11.0)：报告只输出 reportable 意见（accepted/downgraded/candidate；rejected 仅审计可查）。
+    // providerSummary 仍基于全量意见（保留 mock/llm/failed 统计）。
+    const reportableOpinions = dbOpinions.filter((o) => isReportable(o.status));
+    const opinions = reportableOpinions.map((o) => {
       const role = turnToRole.get(o.turnId) ?? { code: 'unknown', name: 'Unknown' };
-      return { dimension: o.dimension, agentCode: role.code, agentName: role.name, riskLevel: o.riskLevel, issue: o.issue, recommendation: o.recommendation, confidenceScore: o.confidenceScore };
+      return { dimension: o.dimension, agentCode: role.code, agentName: role.name, riskLevel: o.riskLevel, issue: o.issue, recommendation: o.recommendation, confidenceScore: o.confidenceScore, status: o.status ?? 'accepted', resolutionReason: o.resolutionReason ?? null };
     });
 
     const risks = opinions.filter((o) => o.riskLevel === 'high' || o.riskLevel === 'medium').map((o) => ({
@@ -317,6 +321,9 @@ export class ReportingService {
       adoptedRate: result.adoptedRate,
       coverage: result.coverage,
       thresholds: result.configSnapshot.thresholds,
+      distribution: result.distribution,
+      inflationWarning: result.inflationWarning,
+      scoreDiscipline: result.configSnapshot.scoreDiscipline ?? { defaultAnchor: 55, maxAbove70Pct: 0.3, requireJustificationAbove70: true },
     };
   }
 

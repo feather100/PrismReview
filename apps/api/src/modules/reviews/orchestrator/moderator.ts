@@ -15,6 +15,8 @@ export interface RuleCheckResult {
   readonly maxTokensOk: boolean; // P1 恒 true（mock 0 token）
   readonly maxCostOk: boolean; // P1 恒 true（cost=0）
   readonly convergenceOk: boolean; // P1 mock 启发式
+  readonly allAgreeOk: boolean; // T2：全员 AGREE 信号（本轮所有意见 stance=agree）
+  readonly noNewArgumentsOk: boolean; // T2：无新论点信号（LLM 判定 / mock dedup 代理）
   readonly passed: boolean; // 全部 Ok 且未触发强停
 }
 
@@ -43,6 +45,12 @@ export interface HardGates {
   readonly maxCostPerReview: number; // P1 恒为 0（禁用，P2 启用）
 }
 
+/** T2 (Sprint 11.0) 收敛信号：Moderator 终止条件三选一（全员 AGREE / no-new-arguments / maxRounds 硬闸）。 */
+export interface ConvergenceSignals {
+  readonly allAgree?: boolean; // 全员 AGREE：本轮所有意见 stance === 'agree'
+  readonly noNewArguments?: boolean; // 本轮无新论点（LLM 判定 / mock dedup 代理）
+}
+
 export const DEFAULT_HARD_GATES: HardGates = {
   maxRounds: 3, // §5.2 轮次上界
   maxTurnsPerReviewer: 3, // 泛化 MODEL_PILOT_MAX_ROLES=3
@@ -62,7 +70,11 @@ export const MODERATOR_TOKEN = 'MODERATOR_SERVICE';
  * 硬闸计算（代码强制，LLM 不可覆盖）。抽出为共享函数，供 MockModerator 与
  * LlmModerator 复用，确保两条路径的硬闸语义一致（Contract §4.3 硬闸 / §5 红线 #8）。
  */
-export function computeRuleCheck(state: Readonly<ReviewState>, gates: HardGates): RuleCheckResult {
+export function computeRuleCheck(
+  state: Readonly<ReviewState>,
+  gates: HardGates,
+  signals?: ConvergenceSignals,
+): RuleCheckResult {
   const round = state.round;
   const usage = state.usage;
 
@@ -75,7 +87,13 @@ export function computeRuleCheck(state: Readonly<ReviewState>, gates: HardGates)
 
   // 收敛启发式（P1 mock 确定性）：各 reviewer 已发言 → 收敛达标
   const reviewersSpoke = Object.keys(usage.turnsByReviewer).length > 0;
-  const convergenceOk = reviewersSpoke;
+
+  // T2：round≥2 且传入信号 → 显式收敛判定（全员 AGREE 或 no-new-arguments）；
+  // 否则（round-1 / 旧调用方不传信号）保留「已发言」启发式，向后兼容。
+  const allAgreeOk = signals?.allAgree === true;
+  const noNewArgumentsOk = signals?.noNewArguments === true;
+  const useSignals = !!signals && round >= 2;
+  const convergenceOk = useSignals ? allAgreeOk || noNewArgumentsOk : reviewersSpoke;
 
   const passed =
     maxRoundsOk && maxTurnsPerReviewerOk && maxTokensOk && maxCostOk && convergenceOk;
@@ -85,9 +103,66 @@ export function computeRuleCheck(state: Readonly<ReviewState>, gates: HardGates)
     maxTurnsPerReviewerOk,
     maxTokensOk,
     maxCostOk,
+    allAgreeOk,
+    noNewArgumentsOk,
     convergenceOk,
     passed,
   };
+}
+
+/**
+ * T2：加载一轮评审的证据与收敛信号（Mock 与 LLM 共享，避免两条路径语义漂移）。
+ * - highRiskCount：本轮 high-risk 意见数（冲突代理，沿用 9.5b）
+ * - allAgree：本轮所有意见 stance === 'agree'（全员 AGREE 收敛信号）
+ * - noNewArguments：本轮所有非空 dedupKey 均已在更早轮次出现（T1 内容键去重的副产品，
+ *   作为 mock 确定性「无新论点」代理；空键一律视为有新论点，保守不收敛）
+ */
+export async function loadRoundEvidence(
+  prisma: PrismaService,
+  reviewId: string,
+  round: number,
+): Promise<{ highRiskCount: number; allAgree: boolean; noNewArguments: boolean }> {
+  const turns = await prisma.reviewTurn.findMany({
+    where: { reviewId, round },
+    select: { id: true },
+  });
+  const turnIds = turns.map((t) => t.id);
+  if (turnIds.length === 0) return { highRiskCount: 0, allAgree: false, noNewArguments: false };
+
+  const opinions = await prisma.reviewOpinion.findMany({
+    where: { turnId: { in: turnIds } },
+    select: { riskLevel: true, stance: true, dedupKey: true },
+  });
+  if (opinions.length === 0) return { highRiskCount: 0, allAgree: false, noNewArguments: false };
+
+  const highRiskCount = opinions.filter(
+    (o) => (o.riskLevel || '').toLowerCase() === 'high',
+  ).length;
+  const allAgree = opinions.every((o) => (o.stance ?? 'neutral') === 'agree');
+
+  // noNewArguments：本轮全部非空 dedupKey ⊆ 更早轮次 dedupKey 集合
+  const thisKeys = opinions
+    .map((o) => o.dedupKey)
+    .filter((k): k is string => !!k && k.length > 0);
+  if (thisKeys.length === 0) return { highRiskCount, allAgree, noNewArguments: false };
+
+  const prevTurns = await prisma.reviewTurn.findMany({
+    where: { reviewId, round: { lt: round } },
+    select: { id: true },
+  });
+  const prevTurnIds = prevTurns.map((t) => t.id);
+  let noNewArguments = false;
+  if (prevTurnIds.length > 0) {
+    const prevOpinions = await prisma.reviewOpinion.findMany({
+      where: { turnId: { in: prevTurnIds } },
+      select: { dedupKey: true },
+    });
+    const prevKeys = new Set(
+      prevOpinions.map((p) => p.dedupKey).filter((k): k is string => !!k && k.length > 0),
+    );
+    noNewArguments = thisKeys.every((k) => prevKeys.has(k));
+  }
+  return { highRiskCount, allAgree, noNewArguments };
 }
 
 @Injectable()
@@ -100,22 +175,27 @@ export class MockModerator implements Moderator {
     const round = state.round;
     const usage = state.usage;
 
-    // ── 硬闸（代码强制，LLM 不可覆盖，复用共享 computeRuleCheck）──
-    const ruleCheckResult = computeRuleCheck(state, gates);
+    // ── 硬闸 + T2 收敛信号（代码强制，LLM 不可覆盖，复用共享 computeRuleCheck）──
+    // T2：round≥2 加载辩论证据（冲突计数 + 全员 AGREE + no-new-arguments 信号）。
+    const evidence = await loadRoundEvidence(this.prisma, state.reviewId, round);
+    const conflictCount = evidence.highRiskCount;
+    const conflict = conflictCount >= 2;
+    const signals: ConvergenceSignals | undefined =
+      round >= 2
+        ? { allAgree: evidence.allAgree, noNewArguments: evidence.noNewArguments }
+        : undefined;
+    const ruleCheckResult = computeRuleCheck(state, gates, signals);
     const {
       maxRoundsOk,
       maxTurnsPerReviewerOk,
       maxTokensOk,
       maxCostOk,
       convergenceOk,
+      allAgreeOk,
+      noNewArgumentsOk,
       passed,
     } = ruleCheckResult;
 
-    // 9.5b round-2 mock debater（Contract §10）：本轮 high-risk 冲突检测。
-    // P1 mock 确定性启发式：本轮 ≥2 条 high-risk opinion → 视为存在未决 high-risk 冲突，
-    // 需要进入 round-2 debate 深挖（"存在 riskLevel=high → 的冲突意见 continue_debate"）。
-    const conflictCount = await this.detectConflict(state.reviewId, round);
-    const conflict = conflictCount >= 2;
     const defenseCount = state.defenseCount ?? 0;
 
     // 多轮脊柱：默认 converge → completed；冲突则 continue_debate → round-2；到顶则 force_stop。
@@ -133,9 +213,9 @@ export class MockModerator implements Moderator {
     } else if (!maxTurnsPerReviewerOk) {
       decisionType = 'force_stop';
       reasoning = `max_turns_per_reviewer breached → force_stop (aborted)`;
-    } else if (!convergenceOk) {
+    } else if (round === 1 && !convergenceOk) {
       decisionType = 'force_stop';
-      reasoning = `convergence not reached (no reviewer spoke) → force_stop (aborted)`;
+      reasoning = `round-1 convergence not reached (no reviewer spoke) → force_stop (aborted)`;
     } else if (round < gates.minRounds) {
       // P2-2：minRounds 强制校验。未达下限即使想收敛也必须继续，
       // 禁止 converge → 返回 advance_round（9.5b 同样进入 round-2 派发）。
@@ -145,11 +225,19 @@ export class MockModerator implements Moderator {
       // 9.5b max_rounds 兜底：到顶仍冲突/未决 → 强停（不无限辩论；Contract §5.3）
       decisionType = 'force_stop';
       reasoning = `round=${round} >= maxRounds=${gates.maxRounds}: max rounds reached → force_stop (aborted)`;
+    } else if (round >= 2 && convergenceOk) {
+      // T2：显式收敛信号命中（全员 AGREE 或 no-new-arguments）→ 收敛
+      decisionType = 'converge';
+      reasoning = `round-${round}: convergence signal reached (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → converge`;
     } else if (conflict && (!config || round >= config.debateAfterRound)) {
       // 9.5b round-2 mock debater：存在 high-risk 冲突且已达 debateAfterRound → 继续辩论
       // 向后兼容：未传 config（旧测试）时 !config=true → 保持原有 conflict→continue_debate 行为
       decisionType = 'continue_debate';
       reasoning = `round-${round}: ${conflictCount} high-risk opinions → conflict detected → continue_debate (round-${round + 1} dispatch)`;
+    } else if (round >= 2 && !convergenceOk) {
+      // T2：辩论未收敛（无信号）→ 继续辩论（round<maxRounds 已由前面保证，不会无限循环）
+      decisionType = 'continue_debate';
+      reasoning = `round-${round}: no convergence signal (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → continue_debate (round-${round + 1} dispatch)`;
     } else if (conflict) {
       // 冲突存在但未达 debateAfterRound：本轮不进 debate（留待后续轮次），按默认 converge/advance 处理
       // F4 警告：high-risk 冲突存在却收敛 —— 明确审计意图（行为被锁定测试 converge + debate deferred）。
@@ -193,24 +281,6 @@ export class MockModerator implements Moderator {
     };
   }
 
-  /**
-   * 9.5b 冲突检测（P1 mock 确定性）：读 DB 中本轮（round）所有 turn 的 opinion，
-   * 统计 high-risk 条数，作为"未决 high-risk 冲突"的代理信号。
-   * 返回 high-risk opinion 数量（≥2 视为冲突）。
-   */
-  private async detectConflict(reviewId: string, round: number): Promise<number> {
-    const turns = await this.prisma.reviewTurn.findMany({
-      where: { reviewId, round },
-      select: { id: true },
-    });
-    if (turns.length < 2) return 0;
-    const turnIds = turns.map((t) => t.id);
-    const opinions = await this.prisma.reviewOpinion.findMany({
-      where: { turnId: { in: turnIds } },
-      select: { riskLevel: true },
-    });
-    return opinions.filter((o) => (o.riskLevel || '').toLowerCase() === 'high').length;
-  }
 }
 
 /** 把决策落库后回读为 state 引用（供 ReviewState.moderatorDecisions 使用）。 */
