@@ -155,3 +155,42 @@ describe('MockModerator.decide', () => {
     expect(d.reasoning).toContain('debate deferred');
   });
 });
+describe('MockModerator.decide — T8 risk-graded HITL', () => {
+  it('risk_gate_hitel when high-risk low-confidence finding exists (round-1 converge path)', async () => {
+    const prisma = makePrismaMock({
+      reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high', confidenceScore: 40 }]) },
+    });
+    const m = new MockModerator(prisma);
+    const d = await m.decide(state(1, { turnsByReviewer: { rv1: 1 } }), {
+      maxRounds: 3, minRounds: 1, maxTurnsPerReviewer: 3, maxTokensPerReview: 200_000, maxCostPerReview: 0,
+    }, DEFAULT_CONFIG);
+    expect(d.decisionType).toBe('risk_gate_hitel');
+    expect(d.reasoning).toContain('risk_gate_hitel');
+  });
+
+  it('converges when high-risk finding has sufficient confidence (≥60)', async () => {
+    const prisma = makePrismaMock({
+      reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high', confidenceScore: 80 }]) },
+    });
+    const m = new MockModerator(prisma);
+    const d = await m.decide(state(1, { turnsByReviewer: { rv1: 1 } }), {
+      maxRounds: 3, minRounds: 1, maxTurnsPerReviewer: 3, maxTokensPerReview: 200_000, maxCostPerReview: 0,
+    }, DEFAULT_CONFIG);
+    expect(d.decisionType).toBe('converge');
+  });
+
+  it('skips gate after humanGateApproved (resume 放行)', async () => {
+    const prisma = makePrismaMock({
+      reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high', confidenceScore: 40 }]) },
+    });
+    const st = { ...state(1, { turnsByReviewer: { rv1: 1 } }), humanGateApproved: true };
+    const m = new MockModerator(prisma);
+    const d = await m.decide(st, {
+      maxRounds: 3, minRounds: 1, maxTurnsPerReviewer: 3, maxTokensPerReview: 200_000, maxCostPerReview: 0,
+    }, DEFAULT_CONFIG);
+    expect(d.decisionType).toBe('converge');
+  });
+});

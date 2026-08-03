@@ -7,6 +7,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { isReportable } from './opinion-lifecycle';
 import { ReviewState, ModeratorDecisionType, ModeratorDecisionRef } from './graph-runtime';
 import type { WorkflowConfig } from '../../workflow/workflow.registry';
 
@@ -54,6 +55,35 @@ export interface ConvergenceSignals {
 
 /** T7：可升级辩论 —— 面板扩容上限（1 = 扩容一次后仍未收敛 → 转人工） */
 export const ESCALATE_MAX = 1;
+
+/** T8：风险门阈值 —— riskLevel=high 且有效置信度(score??confidence) < 60 → 必过人工门 */
+export const RISK_GATE_MIN_CONFIDENCE = 60;
+
+/**
+ * T8：统计"高风险且低置信度"的 reportable 意见数（>0 → 人工门必过）。
+ * 有效置信度 = score（ScoringPass）?? reviewer confidenceScore ?? 0。
+ */
+export async function countRiskGateFindings(
+  prisma: PrismaService,
+  reviewId: string,
+  minConfidence = RISK_GATE_MIN_CONFIDENCE,
+): Promise<number> {
+  const opinions = await prisma.reviewOpinion.findMany({
+    where: { reviewId },
+    select: { riskLevel: true, confidenceScore: true, score: true, status: true },
+  });
+  return opinions.filter((o) => {
+    if (!isReportable(o.status)) return false;
+    if ((o.riskLevel || '').toLowerCase() !== 'high') return false;
+    const eff =
+      typeof o.score === 'number'
+        ? o.score
+        : typeof o.confidenceScore === 'number'
+          ? o.confidenceScore
+          : 0;
+    return eff < minConfidence;
+  }).length;
+}
 
 export const DEFAULT_HARD_GATES: HardGates = {
   maxRounds: 3, // §5.2 轮次上界
@@ -205,6 +235,9 @@ export class MockModerator implements Moderator {
     } = ruleCheckResult;
 
     const defenseCount = state.defenseCount ?? 0;
+    // T8：风险分级 HITL —— 高风险低置信度意见计数（>0 → 人工门必过）
+    const riskGateCount = await countRiskGateFindings(this.prisma, state.reviewId);
+    const riskGateRequired = riskGateCount > 0;
 
     // 多轮脊柱：默认 converge → completed；冲突则 continue_debate → round-2；到顶则 force_stop。
     let decisionType: ModeratorDecisionType = 'converge';
@@ -245,9 +278,14 @@ export class MockModerator implements Moderator {
       decisionType = 'force_stop';
       reasoning = `round=${round} >= maxRounds=${gates.maxRounds}: max rounds reached → force_stop (aborted)`;
     } else if (round >= 2 && convergenceOk) {
-      // T2：显式收敛信号命中（全员 AGREE 或 no-new-arguments）→ 收敛
-      decisionType = 'converge';
-      reasoning = `round-${round}: convergence signal reached (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → converge`;
+      // T2 + T8：显式收敛信号命中；若存在高风险低置信度意见 → 必过人工门
+      if (riskGateRequired && !(state.humanGateApproved ?? false)) {
+        decisionType = 'risk_gate_hitel';
+        reasoning = `round-${round}: ${riskGateCount} high-risk low-confidence finding(s) (< ${RISK_GATE_MIN_CONFIDENCE}) → risk_gate_hitel (human gate)`;
+      } else {
+        decisionType = 'converge';
+        reasoning = `round-${round}: convergence signal reached (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → converge`;
+      }
     } else if (round >= 2 && !convergenceOk && (state.escalationCount ?? 0) < ESCALATE_MAX) {
       // T7：辩论未收敛（无信号）→ 可升级：扩大评审面板（扩容 1–2 角色后重派发一轮）
       decisionType = 'escalate';
@@ -274,6 +312,11 @@ export class MockModerator implements Moderator {
       // @expert mentionné → demander à l'utilisateur de défendre / compléter
       decisionType = 'ask_user_defense';
       reasoning = `round-${round}: user @mentioned expert=${mentionedExpert} (direction: "${(state as any).mentionDirection ?? 'n/a'}") → ask_user_defense (defense #${defenseCount + 1})`;
+    }
+    else if (riskGateRequired && !(state.humanGateApproved ?? false)) {
+      // T8：风险分级 HITL —— 默认收敛前：高风险低置信度意见 → 必过人工门
+      decisionType = 'risk_gate_hitel';
+      reasoning = `round-${round}: ${riskGateCount} high-risk low-confidence finding(s) (< ${RISK_GATE_MIN_CONFIDENCE}) → risk_gate_hitel (human gate)`;
     }
 
     // 审计落库（§5.4）

@@ -63,6 +63,7 @@ function routeAfterSummarized(type: ModeratorDecisionType, defenseCount: number)
     case 'escalate': // T7：扩容后重派发一轮
       return 'running';
     case 'escalate_to_human': // T7：扩容后仍未收敛 → HITL 中断
+    case 'risk_gate_hitel': // T8：高风险低置信度 → HITL 中断（人工门）
       return 'interrupted';
     case 'tool_approval':
     case 'propose_tool':
@@ -675,6 +676,12 @@ export class ReviewOrchestrator implements OnModuleInit {
     this.runningReviews.set(reviewId, entry);
     this.clearInterruptTimer(reviewId);
 
+    // T8：resume = 人工放行 → 置 humanGateApproved（风险门后续不再拦截）
+    await this.prisma.review.update({
+      where: { id: reviewId },
+      data: { humanGateApproved: true },
+    });
+
     // 2. checkpoint running + status 翻牌
     const state = await this.buildState(reviewId);
     const runningState: ReviewState = {
@@ -740,6 +747,7 @@ export class ReviewOrchestrator implements OnModuleInit {
       mentionDirection?: string | null;
       defenseCount?: number;
       escalationCount?: number;
+      humanGateApproved?: boolean;
     };
 
     return {
@@ -751,6 +759,7 @@ export class ReviewOrchestrator implements OnModuleInit {
       mentionDirection: reviewAny.mentionDirection ?? undefined,
       defenseCount: reviewAny.defenseCount ?? 0,
       escalationCount: reviewAny.escalationCount ?? 0,
+      humanGateApproved: reviewAny.humanGateApproved ?? false,
       turns: turnsRaw.map((t) => {
         const tt = t as {
           id: string;
@@ -791,6 +800,7 @@ export class ReviewOrchestrator implements OnModuleInit {
         currentRound: state.round,
         defenseCount: state.defenseCount ?? 0,
         escalationCount: state.escalationCount ?? 0,
+        humanGateApproved: state.humanGateApproved ?? false,
       },
     });
   }
