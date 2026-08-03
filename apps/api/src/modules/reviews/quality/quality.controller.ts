@@ -48,6 +48,19 @@ export class QualityController {
   }
 
   /**
+   * POST /api/quality/calibrate/:reviewId
+   * Body: { humanScores: [{ dimension, score, comment? }] } — gold standard 人工盲评对照
+   */
+  @Post('calibrate/:reviewId')
+  async calibrate(
+    @Param('reviewId') reviewId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() body: { humanScores: Array<{ dimension: string; score: number; comment?: string }> },
+  ) {
+    return this.qualityService.calibrate(reviewId, user, body?.humanScores ?? []);
+  }
+
+  /**
    * POST /api/quality/batch
    * Body: { count: number, provider: string, template?: { title?, objective?, mode? } }
    */

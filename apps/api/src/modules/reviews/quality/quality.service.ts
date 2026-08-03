@@ -21,6 +21,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ReviewsService } from '../reviews.service';
+import { AuditService } from '../../audit/audit.service';
+import { ScoringService } from '../scoring/scoring.service';
+import { computeCalibration, HumanScore, CalibrationReport } from './calibration';
 import { createProviderAdapter, ProviderEnv } from '../provider/provider-factory';
 import {
   ModelAdapter,
@@ -89,6 +92,9 @@ export class QualityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reviewsService: ReviewsService,
+    // T10：评分校准对照（可选注入，兼容手动 new）
+    private readonly scoringService?: ScoringService,
+    private readonly audit?: AuditService,
   ) {
     // P0-4 修复（Sprint 10.1 Round 2 评审）：providerPolicy 必须初始化，
     // 否则 runAdapterOverride() 在非 mock provider 时抛 TypeError（Cannot read properties of undefined）。
@@ -105,6 +111,64 @@ export class QualityService {
    * a fresh adapter is created and run for each role to generate synthetic
    * opinions for comparison.
    */
+  /**
+   * T10：评分校准对照 —— AI 分 vs 人工分（gold standard）。
+   * 输入 humanScores（人工盲评分），AI 分取 ScoringService 维度有效分 + 各维度代表性意见文本；
+   * 输出对照表 + MAE + 越阈值标记（|Δ|>15 或相似度<0.40 → 待人工复核）；审计留痕。
+   */
+  async calibrate(
+    reviewId: string,
+    user: any,
+    humanScores: HumanScore[],
+  ): Promise<CalibrationReport> {
+    const review = await this.prisma.review.findFirst({
+      where: { id: reviewId, tenantId: user.tenantId },
+    });
+    if (!review) throw new NotFoundException('Review not found');
+
+    // AI 维度有效分 + 代表性意见文本
+    const aiScores = await this.buildAiDimensionScores(reviewId, review.mode ?? 'enterprise');
+    const report = computeCalibration(humanScores, aiScores);
+
+    // 审计
+    void this.audit
+      ?.log({
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: 'review.calibration.run',
+        resource: 'review',
+        resourceId: reviewId,
+        detail: { mae: report.mae, flaggedCount: report.flaggedCount, total: report.total },
+      })
+      .catch(() => {});
+
+    return report;
+  }
+
+  /** T10：构建 AI 侧维度有效分 + 代表性意见文本（score 优先；文本取该维度第一条 reportable 意见的 issue）。 */
+  private async buildAiDimensionScores(reviewId: string, workflowId: string): Promise<Array<{ dimension: string; aiScore: number; aiIssue?: string }>> {
+    const opinions = await this.prisma.reviewOpinion.findMany({
+      where: { reviewId },
+      select: { dimension: true, issue: true, status: true, score: true, confidenceScore: true },
+    });
+    const byDim = new Map<string, { scores: number[]; firstIssue?: string }>();
+    for (const o of opinions) {
+      if (o.status === 'rejected') continue;
+      const dim = o.dimension || '未分类';
+      if (!byDim.has(dim)) byDim.set(dim, { scores: [] });
+      const e = byDim.get(dim)!;
+      const eff = typeof o.score === 'number' ? o.score : typeof o.confidenceScore === 'number' ? o.confidenceScore : 0;
+      e.scores.push(eff);
+      if (!e.firstIssue) e.firstIssue = o.issue;
+    }
+    const result: Array<{ dimension: string; aiScore: number; aiIssue?: string }> = [];
+    for (const [dim, e] of byDim) {
+      const avg = e.scores.reduce((a, b) => a + b, 0) / e.scores.length;
+      result.push({ dimension: dim, aiScore: Number(avg.toFixed(2)), aiIssue: e.firstIssue });
+    }
+    return result;
+  }
+
   async evaluateReview(
     reviewId: string,
     user: any,
