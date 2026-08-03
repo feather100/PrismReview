@@ -61,7 +61,8 @@ export type ModeratorDecisionType =
   | 'propose_tool'    // P5: 评审Moderator 提议使用外部工具后再决策
   | 'ask_user_defense' // @用户申辩 — 暂停等待用户补充材料
   | 'escalate' // T7：未收敛 → 扩大评审面板（扩容 1–2 角色后重派发一轮）
-  | 'escalate_to_human'; // T7：扩容后仍未收敛 → 转人工（HITL 中断）
+  | 'escalate_to_human' // T7：扩容后仍未收敛 → 转人工（HITL 中断）
+  | 'risk_gate_hitel'; // T8：高风险低置信度意见 → 必过人工门（风险分级 HITL）
 
 export interface ModeratorDecisionRef {
   readonly decisionId: string;
@@ -95,6 +96,8 @@ export interface ReviewState {
   defenseCount?: number;
   /** T7：面板扩容次数（可升级辩论；0 = 未扩容） */
   readonly escalationCount?: number;
+  /** T8：风险人工门是否已放行（resume 置位） */
+  readonly humanGateApproved?: boolean;
   mentionExpertCode?: string;
   mentionDirection?: string;
   updatedAt: string; // ISO

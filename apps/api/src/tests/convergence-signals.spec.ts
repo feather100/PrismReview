@@ -81,7 +81,14 @@ describe('computeRuleCheck — T2 convergence semantics', () => {
 
 function evidencePrisma(options: {
   currentTurns: Array<{ id: string }>;
-  currentOpinions: Array<{ riskLevel?: string; stance?: string | null; dedupKey?: string | null }>;
+  currentOpinions: Array<{
+    riskLevel?: string;
+    stance?: string | null;
+    dedupKey?: string | null;
+    confidenceScore?: number;
+    score?: number | null;
+    status?: string | null;
+  }>;
   prevTurns?: Array<{ id: string }>;
   prevOpinions?: Array<{ dedupKey?: string | null }>;
 }) {
@@ -159,7 +166,14 @@ describe('loadRoundEvidence', () => {
 
 function decidePrisma(options: {
   currentTurns: Array<{ id: string }>;
-  currentOpinions: Array<{ riskLevel?: string; stance?: string | null; dedupKey?: string | null }>;
+  currentOpinions: Array<{
+    riskLevel?: string;
+    stance?: string | null;
+    dedupKey?: string | null;
+    confidenceScore?: number;
+    score?: number | null;
+    status?: string | null;
+  }>;
   prevTurns?: Array<{ id: string }>;
   prevOpinions?: Array<{ dedupKey?: string | null }>;
 }) {
@@ -174,7 +188,10 @@ describe('MockModerator.decide — T2 convergence', () => {
   it('round-2 全员 AGREE → converge（即使存在 high-risk 冲突）', async () => {
     const prisma = decidePrisma({
       currentTurns: [{ id: 't1' }, { id: 't2' }],
-      currentOpinions: [{ riskLevel: 'high', stance: 'agree' }, { riskLevel: 'high', stance: 'agree' }],
+      currentOpinions: [
+        { riskLevel: 'high', stance: 'agree', confidenceScore: 80 },
+        { riskLevel: 'high', stance: 'agree', confidenceScore: 80 },
+      ],
       prevTurns: [], prevOpinions: [],
     });
     const d = await new MockModerator(prisma).decide(state(2), GATES, CONFIG);

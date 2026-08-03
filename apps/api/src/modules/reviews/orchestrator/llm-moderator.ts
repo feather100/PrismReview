@@ -26,6 +26,7 @@ import {
   ConvergenceSignals,
   computeRuleCheck,
   loadRoundEvidence,
+  countRiskGateFindings,
 } from './moderator';
 import type { WorkflowConfig } from '../../workflow/workflow.registry';
 import type { ToolType } from '../../tool/tool.registry';
@@ -43,6 +44,7 @@ const ALLOWED_DECISION_TYPES: ModeratorDecisionType[] = [
   'propose_tool',
   'escalate',
   'escalate_to_human',
+  'risk_gate_hitel',
 ];
 
 const KNOWN_DIMENSIONS = [
@@ -133,6 +135,14 @@ export class LlmModerator implements Moderator {
       // LLM 无权在无收敛信号（round≥2）时强行 converge → 代码强制 continue_debate
       decisionType = 'continue_debate';
       reasoning = `LLM requested converge but no convergence signal (allAgree/noNewArguments) → continue_debate: ${reasoning}`;
+    } else if (
+      decisionType === 'converge' &&
+      (await countRiskGateFindings(this.prisma, state.reviewId)) > 0 &&
+      !(state.humanGateApproved ?? false)
+    ) {
+      // T8：风险分级 HITL —— 高风险低置信度意见 → 代码强制 risk_gate_hitel（LLM 不可绕过人工门）
+      decisionType = 'risk_gate_hitel';
+      reasoning = `risk-gated HITL: high-risk low-confidence findings require human gate: ${reasoning}`;
     }
 
     const record = await this.prisma.moderatorDecision.create({
