@@ -33,6 +33,7 @@ import { MemoryServiceImpl } from '../../memory/memory.service';
 import { KnowledgeService } from '../../knowledge/knowledge.service';
 import { OpinionLifecycleService } from './opinion-lifecycle';
 import { ScoringPassService } from '../scoring/scoring-pass';
+import { extractTokens, extractProviderName, estimateCostUsd } from '../provider/cost-model';
 
 /**
  * P2-3（9.5a）+ 9.5b 须知悉项 1 & 3：summarized 节点的下一节点由
@@ -292,7 +293,12 @@ export class ReviewOrchestrator implements OnModuleInit {
     const state = await this.buildState(reviewId);
     // P5 (Sprint 5.3)：resolve workflow 配置 → 驱动 maxRounds / debateAfterRound / 门控
     const config = this.workflowRegistry.resolve(review.mode);
-    const gates: HardGates = resolveHardGates({ maxRounds: config.maxRounds, minRounds: config.minRounds });
+    const gates: HardGates = resolveHardGates({
+      maxRounds: config.maxRounds,
+      minRounds: config.minRounds,
+      // T6：成本上限按 workflow 档位（缺省不设限）
+      maxCostPerReview: config.maxCostUsd ?? Number.POSITIVE_INFINITY,
+    });
 
     // summarized 节点：运行 MockModerator（传入 workflow 配置做 debateAfterRound 门控）
     const decision = await this.moderator.decide(state, gates, config);
@@ -624,6 +630,22 @@ export class ReviewOrchestrator implements OnModuleInit {
       if (rid) turnsByReviewer[rid] = (turnsByReviewer[rid] ?? 0) + 1;
     }
 
+    // T6 (Sprint 11.0)：从意见可观测对象聚合 token 与成本（成本模型见 cost-model.ts）
+    const opinionsRaw = await this.prisma.reviewOpinion.findMany({
+      where: { reviewId },
+      select: { modelOutputRef: true },
+    });
+    let totalTokens = 0;
+    let totalCost = 0;
+    for (const o of opinionsRaw) {
+      try {
+        const obs = JSON.parse((o.modelOutputRef as string) || 'null');
+        const tokens = extractTokens(obs);
+        if (tokens?.total && Number.isFinite(tokens.total)) totalTokens += tokens.total;
+        totalCost += estimateCostUsd(extractProviderName(obs), tokens);
+      } catch { /* 忽略解析失败的意见 */ }
+    }
+
     const decisionsRaw = (review.moderatorDecisions as unknown[]) ?? [];
     const moderatorDecisions = decisionsRaw.map((d) => {
       const dd = d as { id: string; round: number; decisionType: string };
@@ -664,10 +686,10 @@ export class ReviewOrchestrator implements OnModuleInit {
       }),
       moderatorDecisions,
       usage: {
-        totalTokens: 0,
+        totalTokens,
         totalRounds: reviewAny.currentRound ?? 1,
         turnsByReviewer,
-        totalCost: 0,
+        totalCost,
       },
       updatedAt: new Date().toISOString(),
     };

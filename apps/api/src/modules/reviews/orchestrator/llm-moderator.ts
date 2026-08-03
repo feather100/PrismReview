@@ -15,6 +15,7 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditService } from '../../audit/audit.service';
 import { ReviewState, ModeratorDecisionType } from './graph-runtime';
 import {
   Moderator,
@@ -58,6 +59,8 @@ export class LlmModerator implements Moderator {
     private readonly prisma: PrismaService,
     private readonly modelAdapter: ModelAdapter, // 经 createProviderAdapter() 注入（含 LongCat）
     private readonly promptService: PromptServiceImpl, // P3
+    // T6：成本超限审计（可选）
+    private readonly audit?: AuditService,
   ) {}
 
   /**
@@ -103,14 +106,27 @@ export class LlmModerator implements Moderator {
           }
         : undefined;
     const ruleCheckResult: RuleCheckResult = computeRuleCheck(state, gates, signals);
+    const costCapEnabled = Number.isFinite(gates.maxCostPerReview) && gates.maxCostPerReview > 0;
     const hardGateBreach =
       !ruleCheckResult.maxRoundsOk ||
       !ruleCheckResult.maxTokensOk ||
-      !ruleCheckResult.maxCostOk ||
       !ruleCheckResult.maxTurnsPerReviewerOk;
     if (hardGateBreach) {
       decisionType = 'force_stop';
       reasoning = `hard gate breached → force_stop (LLM override blocked): ${reasoning}`;
+    } else if (costCapEnabled && !ruleCheckResult.maxCostOk) {
+      // T6：成本超限 → 强制收敛（LLM 无权继续花钱）
+      decisionType = 'converge';
+      reasoning = `cost cap reached → forced converge (scoring pass): ${reasoning}`;
+      void this.audit
+        ?.log({
+          tenantId: '00000000-0000-0000-0000-000000000000',
+          action: 'review.cost_cap_reached',
+          resource: 'review',
+          resourceId: state.reviewId,
+          detail: { reviewId: state.reviewId, totalCost: state.usage?.totalCost ?? 0, cap: gates.maxCostPerReview },
+        })
+        .catch(() => {});
     } else if (decisionType === 'converge' && signals && !ruleCheckResult.convergenceOk) {
       // LLM 无权在无收敛信号（round≥2）时强行 converge → 代码强制 continue_debate
       decisionType = 'continue_debate';
@@ -206,7 +222,7 @@ export class LlmModerator implements Moderator {
     gates: HardGates,
     reason: string,
   ): Promise<ModeratorDecision> {
-    const mock = new MockModerator(this.prisma);
+    const mock = new MockModerator(this.prisma, this.audit);
     const d = await mock.decide(state, gates);
     // 审计：把失败原因写入 llmRawOutput（脱敏），留痕 fail-closed
     try {
@@ -279,21 +295,23 @@ export function createModerator(
   prisma: PrismaService,
   modelAdapter: ModelAdapter,
   promptService: PromptServiceImpl,
+  audit?: AuditService,
 ): Moderator {
   const provider = (process.env.MODERATOR_PROVIDER || '').toLowerCase();
   const allow = process.env.ALLOW_EXTERNAL_MODEL_CALLS || '';
 
   if (provider === 'llm' && allow === 'true') {
-    return new LlmModerator(prisma, modelAdapter, promptService);
+    return new LlmModerator(prisma, modelAdapter, promptService, audit);
   }
   // 默认 / 未 set / llm 但 allow!=true → MockModerator（fail-closed）
-  return new MockModerator(prisma);
+  return new MockModerator(prisma, audit);
 }
 
 /** 便捷构造：自带 createProviderAdapter()（供 Nest 模块 useFactory 调用）。 */
 export function createModeratorWithEnv(
   prisma: PrismaService,
   promptService: PromptServiceImpl,
+  audit?: AuditService,
 ): Moderator {
-  return createModerator(prisma, createProviderAdapter(), promptService);
+  return createModerator(prisma, createProviderAdapter(), promptService, audit);
 }

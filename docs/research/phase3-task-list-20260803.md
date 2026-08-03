@@ -13,8 +13,8 @@
 | T2 收敛判定显式化 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T2_Convergence_Signals.md》；终止条件 = 全员AGREE / noNewArguments / maxRounds 三选一 |
 | T3 评分纪律入模板 + 通胀检测 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T3_Score_Discipline.md》；workflow.scoreDiscipline + distribution/inflationWarning + prompt 注入 |
 | T4 观察与判断分离 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T4_Scoring_Pass.md》；ScoringPass 基于观察聚合维度分（score 优先于 reviewer 自评） |
-| T5 按动作降级 | ⏳ 未开始 | — | — |
-| T6 预算硬闸启用 + 成本 hooks | ⏳ 未开始 | — | — |
+| T5 按动作降级 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T5_T6_Degradation_Cost.md》；classifyTurnError 策略提炼 + 降级矩阵 + 测试 |
+| T6 预算硬闸启用 + 成本 hooks | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T5_T6_Degradation_Cost.md》；成本模型 + workflow maxCostUsd + 超限强制收敛 |
 | T7–T14（P1/P2） | ⏳ 未开始 | — | 见下文 |
 
 ---
@@ -96,7 +96,7 @@
 - **估算：** 3–4 人日
 - **验收：** 端到端测试"reviewer 输出不含 score 字段"；评分仅来自 scoring pass；报告分数可追溯到 observation
 
-### T5 按动作降级（来源：PR Council 模式 C）
+### T5 按动作降级（来源：PR Council 模式 C）—— ✅ 已完成（2026-08-03，见《Sprint_11.0_T5_T6_Degradation_Cost.md》）
 
 - **现状：** provider 失败整体降级 mock（provider-factory 有 fallback 链）
 - **改造：** 将降级细化到"动作级"：
@@ -107,7 +107,7 @@
 - **估算：** 1.5–2.5 人日
 - **验收：** 注入 LLM 失败时：reviewer 意见仍真实、仅 Moderator 降级；providerSource 正确标记
 
-### T6 预算硬闸启用 + 成本 hooks（来源：Lavern 模式 H）
+### T6 预算硬闸启用 + 成本 hooks（来源：Lavern 模式 H）—— ✅ 已完成（2026-08-03，见《Sprint_11.0_T5_T6_Degradation_Cost.md》）
 
 - **现状：** `maxCostPerReview: 0`（禁用）
 - **改造：**

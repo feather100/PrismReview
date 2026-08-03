@@ -6,6 +6,7 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditService } from '../../audit/audit.service';
 import { ReviewState, ModeratorDecisionType, ModeratorDecisionRef } from './graph-runtime';
 import type { WorkflowConfig } from '../../workflow/workflow.registry';
 
@@ -169,7 +170,11 @@ export async function loadRoundEvidence(
 export class MockModerator implements Moderator {
   private readonly logger = new Logger(MockModerator.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // T6：成本超限审计（可选，手动 new 时 undefined）
+    private readonly audit?: AuditService,
+  ) {}
 
   async decide(state: Readonly<ReviewState>, gates: HardGates, config?: WorkflowConfig): Promise<ModeratorDecision> {
     const round = state.round;
@@ -207,12 +212,23 @@ export class MockModerator implements Moderator {
     const wantDefense = defenseCount < 2 && !conflict && !!mentionedExpert;
 
     // 硬闸强停覆盖（达上限 / 越界 → aborted）
-    if (!maxRoundsOk || !maxTokensOk || !maxCostOk) {
+    const costCapEnabled = Number.isFinite(gates.maxCostPerReview) && gates.maxCostPerReview > 0;
+    if (!maxRoundsOk || !maxTokensOk || !maxTurnsPerReviewerOk) {
       decisionType = 'force_stop';
-      reasoning = `hard gate breached (maxRoundsOk=${maxRoundsOk}, maxTokensOk=${maxTokensOk}, maxCostOk=${maxCostOk}) → force_stop (aborted)`;
-    } else if (!maxTurnsPerReviewerOk) {
-      decisionType = 'force_stop';
-      reasoning = `max_turns_per_reviewer breached → force_stop (aborted)`;
+      reasoning = `hard gate breached (maxRoundsOk=${maxRoundsOk}, maxTokensOk=${maxTokensOk}, maxTurnsPerReviewerOk=${maxTurnsPerReviewerOk}) → force_stop (aborted)`;
+    } else if (costCapEnabled && !maxCostOk) {
+      // T6：成本超限 → 强制收敛（进入评分阶段产出报告），不 abort；审计成本事件
+      decisionType = 'converge';
+      reasoning = `cost cap reached (\${usage.totalCost.toFixed(4)} > \${gates.maxCostPerReview}) → forced converge (scoring pass)`;
+      void this.audit
+        ?.log({
+          tenantId: '00000000-0000-0000-0000-000000000000',
+          action: 'review.cost_cap_reached',
+          resource: 'review',
+          resourceId: state.reviewId,
+          detail: { reviewId: state.reviewId, totalCost: usage.totalCost, cap: gates.maxCostPerReview },
+        })
+        .catch(() => {});
     } else if (round === 1 && !convergenceOk) {
       decisionType = 'force_stop';
       reasoning = `round-1 convergence not reached (no reviewer spoke) → force_stop (aborted)`;

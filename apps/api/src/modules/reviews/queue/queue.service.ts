@@ -7,6 +7,7 @@ import { ModelAdapter, MockAdapter, buildSystemPrompt, buildScoreDisciplineText,
 import { WorkflowRegistry } from '../../workflow/workflow.registry';
 import { decryptApiKey } from '../../../common/utils/crypto';
 import { createProviderAdapter } from '../provider/provider-factory';
+import { classifyTurnError } from '../provider/degradation';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { ProviderPolicy, createProviderPolicyFromEnv } from '../provider/provider-policy';
 import { LlmProviderService } from '../../llm-provider/llm-provider.service';
@@ -473,26 +474,31 @@ export class QueueService implements OnModuleDestroy {
         modelName: out.model || 'unknown',
         fallback: false,
         durationMs,
-        tokens: out.usage ? out.usage.totalTokens : undefined,
+        // T6 (Sprint 11.0)：完整 token 明细（成本估算输入）
+        tokens: out.usage
+          ? { prompt: out.usage.promptTokens, completion: out.usage.completionTokens, total: out.usage.totalTokens }
+          : null,
       };
     } catch (err: any) {
       const durationMs = Date.now() - startTime;
       const msg: string = err?.message || String(err);
+      // T5：按动作降级 —— 策略统一由 classifyTurnError 判定（auth/guard → fail_closed；真实 provider 运行时错误 → 单 turn 降级 mock）
+      const degradation = classifyTurnError(err, adapter.name);
       // Auth errors (401/403) — fail closed, no fallback (redact any leaked bearer)
-      if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) {
+      if (degradation === 'auth_fail_closed') {
         const sanitizedMsg = msg.replace(/Bearer [a-zA-Z0-9._-]+/g, 'Bearer ***');
         this.logger.error(`Auth error (no fallback): ${sanitizedMsg}`);
         await this.failTurnAndOpinion(reviewId, reviewTurn.id, roleCode, adapter.name, 'Auth error (no fallback): ' + sanitizedMsg.substring(0, 160), durationMs);
         throw new Error('NO_RETRY:' + msg);
       }
       // Guard error (missing key / misconfig) — fail closed, no fallback
-      if (msg.includes('GUARD') || msg.includes('MODEL PROVIDER GUARD')) {
+      if (degradation === 'guard_fail_closed') {
         this.logger.error(`Provider guard error (no retry): ${msg}`);
         await this.failTurnAndOpinion(reviewId, reviewTurn.id, roleCode, adapter.name, 'Guard error: ' + msg.substring(0, 180), durationMs);
         throw new Error('NO_RETRY:' + msg);
       }
       // Runtime error — fallback to mock with warn (only when a real provider was used)
-      if (adapter.name !== 'mock') {
+      if (degradation === 'fallback_mock') {
         this.logger.warn(`[Fallback] ${adapter.name} → mock, reason: ${msg}`);
         const fallbackOut = await new MockAdapter().complete({ prompt, system });
         const parsed = parseModelOpinion(fallbackOut.text);

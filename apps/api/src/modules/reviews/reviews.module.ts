@@ -21,6 +21,7 @@ import { LlmProviderModule } from '../llm-provider/llm-provider.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PromptServiceImpl } from '../prompt/prompt.service';
 import { AuditModule } from '../audit/audit.module';
+import { AuditService } from '../audit/audit.service';
 import { OpinionLifecycleService } from './orchestrator/opinion-lifecycle';
 import { ScoringPassService } from './scoring/scoring-pass';
 
@@ -39,9 +40,9 @@ import { ScoringPassService } from './scoring/scoring-pass';
     // P4 (Sprint 5.2)：env-gated Moderator（MODERATOR_PROVIDER=llm + ALLOW_EXTERNAL=true → LlmModerator，否则 MockModerator fail-closed）。
     {
       provide: MODERATOR_TOKEN,
-      useFactory: (prisma: PrismaService, promptService: PromptServiceImpl) =>
-        createModeratorWithEnv(prisma, promptService),
-      inject: [PrismaService, PromptServiceImpl],
+      useFactory: (prisma: PrismaService, promptService: PromptServiceImpl, audit: AuditService) =>
+        createModeratorWithEnv(prisma, promptService, audit),
+      inject: [PrismaService, PromptServiceImpl, AuditService],
     },
   ],
   exports: [ReviewsService, QueueService, ReviewOrchestrator, QualityService],

@@ -60,6 +60,8 @@ export interface WorkflowConfig {
   readonly verdictThresholds: VerdictThresholds;
   /** T3：评分纪律（防通胀；缺省用 DEFAULT_SCORE_DISCIPLINE）。可选，兼容存量自定义配置 */
   readonly scoreDiscipline?: ScoreDiscipline;
+  /** T6：单次评审成本上限（USD）；缺省 = 不设限（Infinity） */
+  readonly maxCostUsd?: number;
 }
 
 export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
@@ -84,6 +86,7 @@ export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
     },
     verdictThresholds: { approved: 75, conditionallyApproved: 50 },
     scoreDiscipline: { defaultAnchor: 55, maxAbove70Pct: 0.3, requireJustificationAbove70: true },
+    maxCostUsd: 1.0, // T6：企业评审标准档
   },
   'code-review': {
     id: 'code-review',
@@ -105,6 +108,7 @@ export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
     },
     verdictThresholds: { approved: 80, conditionallyApproved: 55 },
     scoreDiscipline: { defaultAnchor: 60, maxAbove70Pct: 0.25, requireJustificationAbove70: true },
+    maxCostUsd: 0.5, // T6：代码审查快速档
   },
   research: {
     id: 'research',
@@ -126,6 +130,7 @@ export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
     },
     verdictThresholds: { approved: 70, conditionallyApproved: 45 },
     scoreDiscipline: { defaultAnchor: 50, maxAbove70Pct: 0.3, requireJustificationAbove70: true },
+    maxCostUsd: 1.5, // T6：科研评审深度档
   },
   thesis: {
     id: 'thesis',
@@ -147,6 +152,7 @@ export const PRESET_WORKFLOWS: Record<WorkflowId, WorkflowConfig> = {
     },
     verdictThresholds: { approved: 75, conditionallyApproved: 50 },
     scoreDiscipline: { defaultAnchor: 55, maxAbove70Pct: 0.3, requireJustificationAbove70: true },
+    maxCostUsd: 1.0, // T6：论文评审
   },
 };
 
@@ -205,6 +211,11 @@ export class WorkflowRegistry {
       if (Math.abs(sum - 1) > 1e-6) {
         errors.push(`维度权重之和须 = 1（当前 = ${Number(sum.toFixed(4))}）`);
       }
+    }
+
+    const costCap = config?.maxCostUsd;
+    if (costCap !== undefined && (typeof costCap !== 'number' || Number.isNaN(costCap) || costCap < 0)) {
+      errors.push('maxCostUsd 须为非负数值（USD）');
     }
 
     const sd = config?.scoreDiscipline;
