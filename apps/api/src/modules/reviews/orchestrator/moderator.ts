@@ -52,6 +52,9 @@ export interface ConvergenceSignals {
   readonly noNewArguments?: boolean; // 本轮无新论点（LLM 判定 / mock dedup 代理）
 }
 
+/** T7：可升级辩论 —— 面板扩容上限（1 = 扩容一次后仍未收敛 → 转人工） */
+export const ESCALATE_MAX = 1;
+
 export const DEFAULT_HARD_GATES: HardGates = {
   maxRounds: 3, // §5.2 轮次上界
   maxTurnsPerReviewer: 3, // 泛化 MODEL_PILOT_MAX_ROLES=3
@@ -245,15 +248,19 @@ export class MockModerator implements Moderator {
       // T2：显式收敛信号命中（全员 AGREE 或 no-new-arguments）→ 收敛
       decisionType = 'converge';
       reasoning = `round-${round}: convergence signal reached (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → converge`;
+    } else if (round >= 2 && !convergenceOk && (state.escalationCount ?? 0) < ESCALATE_MAX) {
+      // T7：辩论未收敛（无信号）→ 可升级：扩大评审面板（扩容 1–2 角色后重派发一轮）
+      decisionType = 'escalate';
+      reasoning = `round-${round}: no convergence signal (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → escalate (panel expansion #${(state.escalationCount ?? 0) + 1})`;
+    } else if (round >= 2 && !convergenceOk) {
+      // T7：扩容后仍未收敛 → 转人工（escalate_to_human / HITL 中断）
+      decisionType = 'escalate_to_human';
+      reasoning = `round-${round}: no convergence signal after ${(state.escalationCount ?? 0)} expansion(s) → escalate_to_human`;
     } else if (conflict && (!config || round >= config.debateAfterRound)) {
       // 9.5b round-2 mock debater：存在 high-risk 冲突且已达 debateAfterRound → 继续辩论
       // 向后兼容：未传 config（旧测试）时 !config=true → 保持原有 conflict→continue_debate 行为
       decisionType = 'continue_debate';
       reasoning = `round-${round}: ${conflictCount} high-risk opinions → conflict detected → continue_debate (round-${round + 1} dispatch)`;
-    } else if (round >= 2 && !convergenceOk) {
-      // T2：辩论未收敛（无信号）→ 继续辩论（round<maxRounds 已由前面保证，不会无限循环）
-      decisionType = 'continue_debate';
-      reasoning = `round-${round}: no convergence signal (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → continue_debate (round-${round + 1} dispatch)`;
     } else if (conflict) {
       // 冲突存在但未达 debateAfterRound：本轮不进 debate（留待后续轮次），按默认 converge/advance 处理
       // F4 警告：high-risk 冲突存在却收敛 —— 明确审计意图（行为被锁定测试 converge + debate deferred）。

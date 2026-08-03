@@ -194,7 +194,7 @@ describe('MockModerator.decide — T2 convergence', () => {
     expect(d.ruleCheckResult.noNewArgumentsOk).toBe(true);
   });
 
-  it('round-2 无信号 + 冲突 → continue_debate', async () => {
+  it('round-2 无信号 + 冲突 → escalate（T7 面板扩容）', async () => {
     const prisma = decidePrisma({
       currentTurns: [{ id: 't1' }, { id: 't2' }],
       currentOpinions: [
@@ -204,7 +204,8 @@ describe('MockModerator.decide — T2 convergence', () => {
       prevTurns: [], prevOpinions: [],
     });
     const d = await new MockModerator(prisma).decide(state(2), GATES, CONFIG);
-    expect(d.decisionType).toBe('continue_debate');
+    expect(d.decisionType).toBe('escalate');
+    expect(d.reasoning).toContain('escalate');
   });
 
   it('round-1 仍按旧启发式收敛（无冲突）', async () => {

@@ -21,7 +21,11 @@ function makePrismaMock(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
-function state(round: number, usage: Partial<ReviewState['usage']> = {}): ReviewState {
+function state(
+  round: number,
+  usage: Partial<ReviewState['usage']> = {},
+  escalationCount = 0,
+): ReviewState {
   return {
     reviewId: 'test-review',
     status: 'running',
@@ -30,6 +34,7 @@ function state(round: number, usage: Partial<ReviewState['usage']> = {}): Review
     turns: [],
     moderatorDecisions: [],
     usage: { totalRounds: round, totalTokens: 0, totalCost: 0, turnsByReviewer: {}, ...usage },
+    escalationCount,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -85,7 +90,7 @@ describe('MockModerator.decide', () => {
     expect(d.decisionType).toBe('advance_round');
   });
 
-  it('continue_debate when >=2 high-risk opinions at/after debateAfterRound', async () => {
+  it('escalate (panel expansion) when round>=2 not converged with high-risk conflict (T7)', async () => {
     const prisma = makePrismaMock({
       reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]) },
       reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high' }, { riskLevel: 'high' }]) },
@@ -94,6 +99,32 @@ describe('MockModerator.decide', () => {
     const d = await m.decide(state(2, { turnsByReviewer: { rv1: 1, rv2: 1 } }), {
       maxRounds: 3, minRounds: 1, maxTurnsPerReviewer: 3, maxTokensPerReview: 200_000, maxCostPerReview: 0,
     }, DEFAULT_CONFIG);
+    expect(d.decisionType).toBe('escalate');
+    expect(d.reasoning).toContain('escalate');
+  });
+
+  it('escalate_to_human after panel expansion still not converged (T7)', async () => {
+    const prisma = makePrismaMock({
+      reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high' }, { riskLevel: 'high' }]) },
+    });
+    const m = new MockModerator(prisma);
+    const d = await m.decide(state(2, { turnsByReviewer: { rv1: 1, rv2: 1 } }, 1), {
+      maxRounds: 3, minRounds: 1, maxTurnsPerReviewer: 3, maxTokensPerReview: 200_000, maxCostPerReview: 0,
+    }, DEFAULT_CONFIG);
+    expect(d.decisionType).toBe('escalate_to_human');
+    expect(d.reasoning).toContain('escalate_to_human');
+  });
+
+  it('continue_debate at round 1 when debateAfterRound=1 (code-review style)', async () => {
+    const prisma = makePrismaMock({
+      reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high' }, { riskLevel: 'high' }]) },
+    });
+    const m = new MockModerator(prisma);
+    const d = await m.decide(state(1, { turnsByReviewer: { rv1: 1, rv2: 1 } }), {
+      maxRounds: 3, minRounds: 1, maxTurnsPerReviewer: 3, maxTokensPerReview: 200_000, maxCostPerReview: 0,
+    }, { ...DEFAULT_CONFIG, debateAfterRound: 1 });
     expect(d.decisionType).toBe('continue_debate');
   });
 

@@ -15,7 +15,8 @@
 | T4 观察与判断分离 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T4_Scoring_Pass.md》；ScoringPass 基于观察聚合维度分（score 优先于 reviewer 自评） |
 | T5 按动作降级 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T5_T6_Degradation_Cost.md》；classifyTurnError 策略提炼 + 降级矩阵 + 测试 |
 | T6 预算硬闸启用 + 成本 hooks | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T5_T6_Degradation_Cost.md》；成本模型 + workflow maxCostUsd + 超限强制收敛 |
-| T7–T14（P1/P2） | ⏳ 未开始 | — | 见下文 |
+| T7 可升级辩论 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T7_Escalation.md》 | escalate/escalate_to_human + 面板扩容 + HITL |
+| T8–T14（P1/P2） | ⏳ 未开始 | — | 见下文 |
 
 ---
 
@@ -122,7 +123,7 @@
 
 ## 二、P1 任务
 
-### T7 可升级辩论 / 升级路径（来源：PaperJury 模式 K）
+### T7 可升级辩论 / 升级路径（来源：PaperJury 模式 K）—— ✅ 已完成（2026-08-03，见《Sprint_11.0_T7_Escalation.md》）
 
 - **改造：** Moderator 决策增加 `escalate`：意见在 maxRounds 内未收敛 → 触发"扩大评审"（增加 1–2 个 reviewer persona 或加 1 轮）→ 仍不收敛 → `escalate_to_human`（HITL）
 - **涉及：** moderator.ts、hard-gates.ts、reviews.service.ts

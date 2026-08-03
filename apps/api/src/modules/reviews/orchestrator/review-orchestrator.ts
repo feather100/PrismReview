@@ -45,7 +45,7 @@ import { extractTokens, extractProviderName, estimateCostUsd } from '../provider
  *     · continue_debate：存在 high-risk 冲突 → 派发 round-2 debate turns
  *     两者在 9.5b 均触发 currentRound++ + round-N 派发（多轮循环）。
  */
-type NextNode = 'completed' | 'aborted' | 'running' | 'tool_node' | 'pending_defense';
+type NextNode = 'completed' | 'aborted' | 'running' | 'tool_node' | 'pending_defense' | 'interrupted'; // T7：escalate_to_human → HITL 中断
 
 const DEFENSE_MAX = 2; // max tours de défense utilisateur
 
@@ -60,7 +60,10 @@ function routeAfterSummarized(type: ModeratorDecisionType, defenseCount: number)
       return 'aborted';
     case 'advance_round':
     case 'continue_debate':
+    case 'escalate': // T7：扩容后重派发一轮
       return 'running';
+    case 'escalate_to_human': // T7：扩容后仍未收敛 → HITL 中断
+      return 'interrupted';
     case 'tool_approval':
     case 'propose_tool':
       return 'tool_node'; // P4/P5 Tool 节点（stub）
@@ -361,6 +364,18 @@ export class ReviewOrchestrator implements OnModuleInit {
 
     if (next === 'running') {
       // 9.5b 须知悉项 1 & 3：advance_round / continue_debate → round-2 (N) 派发（多轮循环）。
+      // T7：escalate → 扩容面板（加 1–2 个角色）后再派发。
+      const isEscalation = decision.decisionType === 'escalate';
+      if (isEscalation) {
+        const added = await this.expandRoles(reviewId);
+        if (added === 0) {
+          // 无可用角色 → 直接转人工（与 escalate_to_human 同路径）
+          this.logger.warn(`Spine: review ${rid} escalate but no roles available → escalate_to_human`);
+          await this.parkInterrupted(reviewId, summarizedState, state.round);
+          return;
+        }
+        this.logger.log(`Spine: review ${rid} escalate → expanded panel by ${added} role(s) (round-${state.round + 1})`);
+      }
       const nextRound = state.round + 1;
 
       // 须知悉项 2：每轮派发前重校验 max_rounds（防御性双闸；Moderator 已在 round>=maxRounds 返回 force_stop）。
@@ -386,6 +401,7 @@ export class ReviewOrchestrator implements OnModuleInit {
         status: 'running',
         currentNodeId: 'running',
         round: nextRound,
+        escalationCount: isEscalation ? (state.escalationCount ?? 0) + 1 : (state.escalationCount ?? 0),
         updatedAt: new Date().toISOString(),
       };
       await this.checkpoint(reviewId, 'running', runningState);
@@ -402,6 +418,12 @@ export class ReviewOrchestrator implements OnModuleInit {
       this.logger.log(
         `Spine: review ${rid} decision=${decision.decisionType} → running(round-${nextRound}) dispatched (multi-round)`,
       );
+      return;
+    }
+
+    if (next === 'interrupted') {
+      // T7：escalate_to_human —— 转人工（HITL 中断，复用 interrupted + 120s 超时兜底）
+      await this.parkInterrupted(reviewId, summarizedState, state.round);
       return;
     }
 
@@ -437,6 +459,65 @@ export class ReviewOrchestrator implements OnModuleInit {
 
     this.cleanupReview(reviewId);
     this.logger.log(`Spine complete: review ${rid} → completed (decision=${decision.decisionType})`);
+  }
+
+  /**
+   * T7：转人工 —— 设置 interrupted 状态 + 内存标志 + 120s 超时兜底（复用 HITL 机制）。
+   * 审计由 ModeratorDecision 记录承载（decisionType=escalate_to_human + reasoning）。
+   */
+  private async parkInterrupted(
+    reviewId: string,
+    summarizedState: ReviewState,
+    round: number,
+  ): Promise<void> {
+    const interruptedState: ReviewState = {
+      ...summarizedState,
+      status: 'interrupted',
+      currentNodeId: 'interrupted',
+      updatedAt: new Date().toISOString(),
+    };
+    await this.checkpoint(reviewId, 'interrupted', interruptedState);
+    await this.persistState(reviewId, interruptedState);
+    const entry = this.runningReviews.get(reviewId) ?? { interrupted: true };
+    entry.interrupted = true;
+    this.runningReviews.set(reviewId, entry);
+    this.scheduleInterruptTimeout(reviewId, round);
+    this.logger.log(`Spine: review ${reviewId.substring(0, 8)} escalate_to_human → interrupted (HITL)`);
+  }
+
+  /**
+   * T7：面板扩容 —— 从 agentRole 池挑选未参与角色（优先非 preset），加入 roleSelection。
+   * 返回实际新增角色数（0 = 无可用角色，调用方转人工）。
+   */
+  private async expandRoles(reviewId: string, escalateBy = 2): Promise<number> {
+    const review = await this.prisma.review.findUnique({
+      where: { id: reviewId },
+      select: { roleSelection: true },
+    });
+    const selection = (review?.roleSelection as any) ?? { roles: [] };
+    const current = (selection.roles as any[]) ?? [];
+    const currentIds = new Set<string>(current.map((r: any) => r.roleId));
+    if (currentIds.size === 0) return 0;
+    const pool = await this.prisma.agentRole.findMany({
+      where: { status: 'enabled', id: { notIn: [...currentIds] } },
+      select: { id: true, code: true, name: true, type: true },
+    });
+    if (pool.length === 0) return 0;
+    // 优先非 preset（可加装角色），其次 preset
+    pool.sort((a, b) => (a.type === 'preset' ? 1 : 0) - (b.type === 'preset' ? 1 : 0));
+    const added = pool.slice(0, escalateBy);
+    const newSelection = {
+      ...selection,
+      roles: [
+        ...current,
+        ...added.map((r) => ({ roleId: r.id, weight: 20, reason: 'escalated' })),
+      ],
+    };
+    await this.prisma.review.update({
+      where: { id: reviewId },
+      data: { roleSelection: newSelection as any },
+    });
+    return added.length;
   }
 
   /** Emit SSE 'defense.requested' to connected clients. */
@@ -658,6 +739,7 @@ export class ReviewOrchestrator implements OnModuleInit {
       mentionExpertCode?: string | null;
       mentionDirection?: string | null;
       defenseCount?: number;
+      escalationCount?: number;
     };
 
     return {
@@ -668,6 +750,7 @@ export class ReviewOrchestrator implements OnModuleInit {
       mentionExpertCode: reviewAny.mentionExpertCode ?? undefined,
       mentionDirection: reviewAny.mentionDirection ?? undefined,
       defenseCount: reviewAny.defenseCount ?? 0,
+      escalationCount: reviewAny.escalationCount ?? 0,
       turns: turnsRaw.map((t) => {
         const tt = t as {
           id: string;
@@ -707,6 +790,7 @@ export class ReviewOrchestrator implements OnModuleInit {
         currentNodeId: state.currentNodeId,
         currentRound: state.round,
         defenseCount: state.defenseCount ?? 0,
+        escalationCount: state.escalationCount ?? 0,
       },
     });
   }

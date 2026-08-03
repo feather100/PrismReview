@@ -41,6 +41,8 @@ const ALLOWED_DECISION_TYPES: ModeratorDecisionType[] = [
   'terminate_proposal',
   'tool_approval',
   'propose_tool',
+  'escalate',
+  'escalate_to_human',
 ];
 
 const KNOWN_DIMENSIONS = [
