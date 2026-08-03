@@ -130,4 +130,17 @@ cd apps/web && npx tsc --noEmit --incremental false && cd ../..
 - 默认 mock：真模型（LM Studio / OpenAI-compatible）仅在显式 env + Gate 下启用，且 dev-only 有数量上限。
 - 不 `--force`、不绕 Gate、不在错误目录 `git init`。
 
+---
+
+## 🧾 数据与调研纪律（Data & Research Discipline）
+
+> 2026-08 竞品调研曾发生「检索 0 结果却照写报告、把训练知识当实测」的教训（见 `docs/research/20260803-competitive-landscape-research-review.md`）。以下纪律为硬性要求：
+
+1. **「实测 / 核验 / 已验证」标注必须有可复现路径**：GitHub API 请求、arXiv 链接、官方文档 URL 等；拿不出验证路径的一律标「未核验 / 训练知识」，禁止用「实测」措辞包装记忆。
+2. **检索 / 工具 0 结果必须显式报告并停止**：禁止静默切换到训练知识模式继续输出；应说明工具不可用并等待修复或换工具。
+3. **数据修订只允许引用基线表**：调研/竞品数据一律以 `docs/research/verified-facts-20260803.md` 为唯一基线；禁止用记忆值替换实测值。
+4. **Checklist 真实性**：声称「已修正 / 已完成」的条目必须实际生效；发现勾选但未执行即视为缺陷。
+
+任何 Agent / 协作者产出调研或数据类文档时默认遵守以上四条。
+
 如有疑问，先开 Issue 讨论，再动手实现。期待你的 PR！ 🙌

@@ -69,3 +69,6 @@ apps/api/scripts/verify-*.js
 
 # Sprint 4.0 quality benchmark CLI (local dev tool)
 apps/api/scripts/quality-benchmark.js
+
+# 调研 scratch 文件（根目录 _* 临时产物，勿入库）
+/_*

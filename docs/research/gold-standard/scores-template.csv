@@ -1,0 +1,5 @@
+document_id,expert_id,dimension,score,overall_score,key_issue,confidence
+DOC-001,E1,架构合理性,60,62,存在单点故障风险，建议多副本部署。,70
+DOC-001,E1,投入产出分析,55,62,投资回收期估算偏乐观。,
+DOC-001,E2,架构合理性,65,64,整体可行，但需要补充容灾方案。,
+DOC-001,E2,投入产出分析,58,64,成本项有遗漏（运维人力）。,
