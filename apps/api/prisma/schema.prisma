@@ -280,6 +280,8 @@ model ReviewOpinion {
   dedupKey         String?  @map("dedup_key") // 内容键 = dimension:normalizedIssue（同题归并）
   mergedReviewerIds Json?  @map("merged_reviewer_ids") // 被归并到本意见（canonical）的 reviewerId 列表
   canonicalOpinionId String? @map("canonical_opinion_id") // 重复意见指向的 canonical opinion id
+  // --- T2 (Sprint 11.0) 收敛信号：评审员对争议的立场（agree/disagree/neutral），驱动全员 AGREE 收敛判定 ---
+  stance           String?  @default("neutral") @map("stance") // agree | disagree | neutral
 
   review Review     @relation(fields: [reviewId], references: [id])
   turn   ReviewTurn @relation(fields: [turnId], references: [id])

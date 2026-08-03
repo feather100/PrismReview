@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { findExistingTerminalTurn } from '../orchestrator/idempotency';
 import { shouldDispatchTurn, resolveHardGates } from '../orchestrator/hard-gates';
-import { validateOpinion, StructuredOpinion, RiskLevel, computeDedupKey } from '../orchestrator/opinion';
+import { validateOpinion, StructuredOpinion, RiskLevel, computeDedupKey, normalizeStance } from '../orchestrator/opinion';
 import { ModelAdapter, MockAdapter, buildSystemPrompt, isLikelyChinese, parseModelOpinion } from '../provider/model-adapter';
 import { createProviderAdapter } from '../provider/provider-factory';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
@@ -513,6 +513,8 @@ export class QueueService implements OnModuleDestroy {
         // T1 (Sprint 11.0)：新意见进入生命周期（candidate），终结时由 OpinionLifecycleService 收束 + 同题归并
         status: 'candidate',
         dedupKey: computeDedupKey(result.dimension, result.issue),
+        // T2 (Sprint 11.0)：评审员对争议的立场（agree/disagree/neutral），驱动全员 AGREE 收敛判定
+        stance: normalizeStance(result.stance),
       },
     });
 

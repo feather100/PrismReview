@@ -22,7 +22,9 @@ import {
   MockModerator,
   HardGates,
   RuleCheckResult,
+  ConvergenceSignals,
   computeRuleCheck,
+  loadRoundEvidence,
 } from './moderator';
 import type { WorkflowConfig } from '../../workflow/workflow.registry';
 import type { ToolType } from '../../tool/tool.registry';
@@ -68,6 +70,7 @@ export class LlmModerator implements Moderator {
     let reasoning = '';
     let proposedTools: string[] = [];
     let raw = '';
+    let llmNoNewArguments = false; // T2：LLM 声明的 noNewArguments（try 内解析，作用域提升）
 
     try {
       const prompt = await this.promptService.composeForModerator(state);
@@ -81,6 +84,7 @@ export class LlmModerator implements Moderator {
       const parsed = this.parseDecision(raw);
       decisionType = parsed.decisionType;
       reasoning = parsed.reasoning || '';
+      llmNoNewArguments = parsed.noNewArguments === true;
       // P5（§6.2）：PROPOSE_TOOLS 时按 workflow.availableTools 过滤（仅保留预设允许的工具）
       proposedTools = this.filterToolsByWorkflow(parsed.proposedTools || [], config);
     } catch (e: any) {
@@ -88,11 +92,29 @@ export class LlmModerator implements Moderator {
       return this.fallbackDecision(state, gates, 'adapter_failure: ' + (e?.message || String(e)));
     }
 
-    // ── 硬闸（代码强制，LLM 不可覆盖）──
-    const ruleCheckResult: RuleCheckResult = computeRuleCheck(state, gates);
-    if (!ruleCheckResult.passed) {
+    // ── 硬闸 + T2 收敛信号（代码强制，LLM 不可覆盖）──
+    // T2：round≥2 时，收敛判定 = 全员 AGREE（DB stance）或 LLM 声明的 noNewArguments；
+    // 硬闸强停仅由硬性条件触发（轮次/token/成本/次数），收敛缺失 → continue_debate 而非 force_stop。
+    const signals: ConvergenceSignals | undefined =
+      state.round >= 2
+        ? {
+            allAgree: (await loadRoundEvidence(this.prisma, state.reviewId, state.round)).allAgree,
+            noNewArguments: llmNoNewArguments,
+          }
+        : undefined;
+    const ruleCheckResult: RuleCheckResult = computeRuleCheck(state, gates, signals);
+    const hardGateBreach =
+      !ruleCheckResult.maxRoundsOk ||
+      !ruleCheckResult.maxTokensOk ||
+      !ruleCheckResult.maxCostOk ||
+      !ruleCheckResult.maxTurnsPerReviewerOk;
+    if (hardGateBreach) {
       decisionType = 'force_stop';
       reasoning = `hard gate breached → force_stop (LLM override blocked): ${reasoning}`;
+    } else if (decisionType === 'converge' && signals && !ruleCheckResult.convergenceOk) {
+      // LLM 无权在无收敛信号（round≥2）时强行 converge → 代码强制 continue_debate
+      decisionType = 'continue_debate';
+      reasoning = `LLM requested converge but no convergence signal (allAgree/noNewArguments) → continue_debate: ${reasoning}`;
     }
 
     const record = await this.prisma.moderatorDecision.create({
@@ -203,6 +225,7 @@ export class LlmModerator implements Moderator {
     decisionType: ModeratorDecisionType;
     reasoning: string;
     proposedTools: string[];
+    noNewArguments?: boolean;
   } {
     let obj: any;
     try {
@@ -218,6 +241,7 @@ export class LlmModerator implements Moderator {
       decisionType: dt as ModeratorDecisionType,
       reasoning: typeof obj.reasoning === 'string' ? obj.reasoning : '',
       proposedTools: Array.isArray(obj.proposedTools) ? obj.proposedTools.map(String) : [],
+      noNewArguments: obj?.noNewArguments === true ? true : undefined,
     };
   }
 

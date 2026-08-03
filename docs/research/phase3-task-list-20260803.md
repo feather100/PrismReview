@@ -10,7 +10,7 @@
 | 任务 | 状态 | 完成日期 | 说明 |
 |------|------|---------|------|
 | T1 意见生命周期 + 内容键去重 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T1_Opinion_Lifecycle.md》；报告只输出 accepted/downgraded（candidate 兜底），rejected 仅审计可查 |
-| T2 收敛判定显式化 | ⏳ 未开始 | — | 依赖 T1 数据模型 |
+| T2 收敛判定显式化 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T2_Convergence_Signals.md》；终止条件 = 全员AGREE / noNewArguments / maxRounds 三选一 |
 | T3 评分纪律入模板 + 通胀检测 | ⏳ 未开始 | — | — |
 | T4 观察与判断分离 | ⏳ 未开始 | — | 依赖 T1 |
 | T5 按动作降级 | ⏳ 未开始 | — | — |
@@ -62,7 +62,7 @@
 - **估算：** 2–3 人日
 - **验收：** 单元测试覆盖"同题归并 / 质疑→接受 / 降级保留历史 / 迁移审计事件"；报告不含 rejected
 
-### T2 收敛判定显式化（来源：Solutioning Room 模式 Q）
+### T2 收敛判定显式化（来源：Solutioning Room 模式 Q）—— ✅ 已完成（2026-08-03，见《Sprint_11.0_T2_Convergence_Signals.md》）
 
 - **现状：** `convergenceOk = reviewersSpoke`（过弱）
 - **改造：** 收敛 = 三选一触发：

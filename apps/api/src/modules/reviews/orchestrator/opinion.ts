@@ -8,6 +8,16 @@ export type RiskLevel = 'high' | 'medium' | 'low' | 'info';
 
 export type OpinionStatus = 'candidate' | 'challenged' | 'accepted' | 'rejected' | 'downgraded';
 
+export type OpinionStance = 'agree' | 'disagree' | 'neutral';
+
+export const OPINION_STANCES: ReadonlySet<string> = new Set<string>(['agree', 'disagree', 'neutral']);
+
+/** 归一化 stance（大小写不敏感，非法/缺失 → neutral）。 */
+export function normalizeStance(value: unknown): OpinionStance {
+  const s = String(value ?? '').trim().toLowerCase();
+  return OPINION_STANCES.has(s) ? (s as OpinionStance) : 'neutral';
+}
+
 export const OPINION_STATUSES: ReadonlySet<string> = new Set<string>([
   'candidate', 'challenged', 'accepted', 'rejected', 'downgraded',
 ]);
@@ -48,6 +58,8 @@ export interface StructuredOpinion {
   readonly status?: OpinionStatus;
   readonly resolutionReason?: string;
   readonly dedupKey?: string;
+  // --- T2 (Sprint 11.0) 收敛信号：评审员对争议的立场 ---
+  readonly stance?: OpinionStance;
 }
 
 export interface OpinionValidationResult {
@@ -66,6 +78,9 @@ export function validateOpinion(
     return { valid: false, errors: ['opinion is null/undefined'] };
   }
 
+  if (o.stance !== undefined && !OPINION_STANCES.has(o.stance)) {
+    errors.push('stance invalid (expected agree|disagree|neutral)');
+  }
   if (o.status !== undefined && !OPINION_STATUSES.has(o.status)) {
     errors.push('status invalid (expected candidate|challenged|accepted|rejected|downgraded)');
   }
