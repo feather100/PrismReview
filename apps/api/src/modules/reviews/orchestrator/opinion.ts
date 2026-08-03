@@ -6,6 +6,32 @@
  */
 export type RiskLevel = 'high' | 'medium' | 'low' | 'info';
 
+export type OpinionStatus = 'candidate' | 'challenged' | 'accepted' | 'rejected' | 'downgraded';
+
+export const OPINION_STATUSES: ReadonlySet<string> = new Set<string>([
+  'candidate', 'challenged', 'accepted', 'rejected', 'downgraded',
+]);
+
+/**
+ * 内容键去重：normalize issue（大小写折叠 + 空白/标点折叠），返回稳定键。
+ * 来源：PR Review Agent Council FindingLifecycle 内容键去重（(file,line,category,title) → (dimension,issue)）。
+ */
+export function normalizeIssueKey(issue: string): string {
+  return (issue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\u3000\s]+/g, ' ')
+    .replace(/[，。！？；：、,.!?;:、\-\_\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** 内容键 = dimension + normalizedIssue（同一评审内同题归并的判定依据）。 */
+export function computeDedupKey(dimension: string, issue: string): string {
+  return `${(dimension || '').trim()}:${normalizeIssueKey(issue)}`;
+}
+
+
 export interface StructuredOpinion {
   readonly schemaVersion: string; // 新增，如 "1.0"
   readonly reviewerId: string; // roleVersionId
@@ -18,6 +44,10 @@ export interface StructuredOpinion {
   readonly confidenceScore: number; // [0,100] 整数
   readonly reasoningSummary?: string;
   readonly modelOutputRef?: string; // 既有 5 态 providerSource 落库
+  // --- T1 (Sprint 11.0) Opinion Lifecycle：生命周期状态（可选，向后兼容；未提供视为已受理）---
+  readonly status?: OpinionStatus;
+  readonly resolutionReason?: string;
+  readonly dedupKey?: string;
 }
 
 export interface OpinionValidationResult {
@@ -36,6 +66,9 @@ export function validateOpinion(
     return { valid: false, errors: ['opinion is null/undefined'] };
   }
 
+  if (o.status !== undefined && !OPINION_STATUSES.has(o.status)) {
+    errors.push('status invalid (expected candidate|challenged|accepted|rejected|downgraded)');
+  }
   if (typeof o.schemaVersion !== 'string' || !SCHEMA_VERSION_RE.test(o.schemaVersion)) {
     errors.push('schemaVersion missing or invalid (expected ^\\d+\\.\\d+$)');
   }

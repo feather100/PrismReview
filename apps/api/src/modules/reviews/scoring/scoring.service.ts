@@ -15,6 +15,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { WorkflowRegistry, WorkflowConfig, WorkflowId } from '../../workflow/workflow.registry';
+import { isReportable } from '../orchestrator/opinion-lifecycle';
 
 export interface DimensionScore {
   readonly dimension: string;
@@ -92,12 +93,14 @@ export class ScoringService {
 
     const opinions = await this.prisma.reviewOpinion.findMany({
       where: { reviewId },
-      select: { dimension: true, riskLevel: true, confidenceScore: true },
+      select: { dimension: true, riskLevel: true, confidenceScore: true, status: true },
     });
+    // T1 (Sprint 11.0)：评分只统计 reportable 意见（accepted/downgraded/candidate；rejected 重复/失败存根不计分，防通胀）
+    const reportableOpinions = opinions.filter((o) => isReportable(o.status));
 
     // 按维度聚合
     const byDim = new Map<string, { confidences: number[]; risks: string[] }>();
-    for (const o of opinions) {
+    for (const o of reportableOpinions) {
       const dim = o.dimension || '未分类';
       if (!byDim.has(dim)) byDim.set(dim, { confidences: [], risks: [] });
       const entry = byDim.get(dim)!;

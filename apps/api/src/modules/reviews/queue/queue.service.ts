@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { findExistingTerminalTurn } from '../orchestrator/idempotency';
 import { shouldDispatchTurn, resolveHardGates } from '../orchestrator/hard-gates';
-import { validateOpinion, StructuredOpinion, RiskLevel } from '../orchestrator/opinion';
+import { validateOpinion, StructuredOpinion, RiskLevel, computeDedupKey } from '../orchestrator/opinion';
 import { ModelAdapter, MockAdapter, buildSystemPrompt, isLikelyChinese, parseModelOpinion } from '../provider/model-adapter';
 import { createProviderAdapter } from '../provider/provider-factory';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
@@ -489,6 +489,8 @@ export class QueueService implements OnModuleDestroy {
           citations: [], confidenceScore: 0,
           reasoningSummary: 'validateOpinion failed: ' + validation.errors.join('; ').slice(0, 180),
           modelOutputRef: JSON.stringify({ providerSource: 'failed', validationError: true }),
+          // T1 (Sprint 11.0)：校验失败存根不进报告（仅审计可查）
+          status: 'rejected', resolutionReason: 'validation_failed',
         },
       });
       throw new Error('NO_RETRY:opinion validation failed');
@@ -508,6 +510,9 @@ export class QueueService implements OnModuleDestroy {
         modelOutputRef: JSON.stringify(observability),
         // P3：prompt 版本溯源（ComposedPrompt.templateRefs 序列化）；未注入 promptService 时为 null
         promptRefs: (promptRefs ?? undefined) as any,
+        // T1 (Sprint 11.0)：新意见进入生命周期（candidate），终结时由 OpinionLifecycleService 收束 + 同题归并
+        status: 'candidate',
+        dedupKey: computeDedupKey(result.dimension, result.issue),
       },
     });
 
@@ -552,6 +557,8 @@ export class QueueService implements OnModuleDestroy {
         dimension: '', riskLevel: 'info', issue: '', recommendation: '',
         citations: [], confidenceScore: 0,
         reasoningSummary: message.substring(0, 160),
+        // T1 (Sprint 11.0)：fail-closed 存根不进报告（仅审计可查）
+        status: 'rejected', resolutionReason: 'fail_closed',
         modelOutputRef: JSON.stringify({
           providerSource: 'failed',
           providerName,

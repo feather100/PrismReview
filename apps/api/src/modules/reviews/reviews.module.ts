@@ -19,9 +19,11 @@ import { WorkflowModule } from '../workflow/workflow.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PromptServiceImpl } from '../prompt/prompt.service';
+import { AuditModule } from '../audit/audit.module';
+import { OpinionLifecycleService } from './orchestrator/opinion-lifecycle';
 
 @Module({
-  imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule, WorkflowModule, ReportingModule],
+  imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule, WorkflowModule, ReportingModule, AuditModule],
   controllers: [ReviewsController, QualityController, DefenseController],
   providers: [
     ReviewsService,
@@ -30,6 +32,7 @@ import { PromptServiceImpl } from '../prompt/prompt.service';
     ReviewOrchestrator,
     PostgresCheckpointer,
     QualityService,
+    OpinionLifecycleService,
     // P4 (Sprint 5.2)：env-gated Moderator（MODERATOR_PROVIDER=llm + ALLOW_EXTERNAL=true → LlmModerator，否则 MockModerator fail-closed）。
     {
       provide: MODERATOR_TOKEN,
