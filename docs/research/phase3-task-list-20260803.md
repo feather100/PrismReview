@@ -19,7 +19,8 @@
 | T8 风险分级 HITL | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T8_Risk_HITL.md》 | 高风险低置信度 → 人工门；resume 放行 |
 | T9 段落级锚点 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T9_Passage_Anchor.md》 | passageId 切分 + 意见 passageRefs + 报告/详情暴露 |
 | T10 校准对照 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T10_Calibration.md》 | AI vs 人工：\|Δ\| + 相似度 + 越阈值标记 + POST /calibrate |
-| T11–T14（P1/P2） | ⏳ 未开始 | — | 见下文 |
+| T11 会话级隔离加固 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T11_Session_Isolation.md》 | 隔离审计 + 并发回归测试（5 场无串场） |
+| T12–T14（P2） | ⏳ 未开始 | — | 见下文 |
 
 ---
 
