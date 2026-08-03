@@ -264,8 +264,10 @@ export class MockAdapter implements ModelAdapter {
     const table = isZh ? MOCK_RESPONSES : MOCK_RESPONSES_EN;
     // (debug removed)
     const base = table[roleCode] || table.CTO;
+    // T2/T3 (Sprint 11.0)：mock 意见统一带 stance='agree' → round≥2 可演示全员 AGREE 收敛；
+    // round-1 忽略 stance（Moderator 仅 round≥2 使用），不影响单轮收敛行为。
     return {
-      text: JSON.stringify(base),
+      text: JSON.stringify({ ...base, stance: 'agree' }),
       model: 'mock',
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
     };
