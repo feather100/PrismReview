@@ -17,7 +17,8 @@
 | T6 预算硬闸启用 + 成本 hooks | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T5_T6_Degradation_Cost.md》；成本模型 + workflow maxCostUsd + 超限强制收敛 |
 | T7 可升级辩论 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T7_Escalation.md》 | escalate/escalate_to_human + 面板扩容 + HITL |
 | T8 风险分级 HITL | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T8_Risk_HITL.md》 | 高风险低置信度 → 人工门；resume 放行 |
-| T9–T14（P1/P2） | ⏳ 未开始 | — | 见下文 |
+| T9 段落级锚点 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T9_Passage_Anchor.md》 | passageId 切分 + 意见 passageRefs + 报告/详情暴露 |
+| T10–T14（P1/P2） | ⏳ 未开始 | — | 见下文 |
 
 ---
 

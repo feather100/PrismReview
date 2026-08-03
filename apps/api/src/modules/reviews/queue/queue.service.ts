@@ -8,6 +8,7 @@ import { WorkflowRegistry } from '../../workflow/workflow.registry';
 import { decryptApiKey } from '../../../common/utils/crypto';
 import { createProviderAdapter } from '../provider/provider-factory';
 import { classifyTurnError } from '../provider/degradation';
+import { extractPassages, linkPassages, Passage } from '../util/passages';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { ProviderPolicy, createProviderPolicyFromEnv } from '../provider/provider-policy';
 import { LlmProviderService } from '../../llm-provider/llm-provider.service';
@@ -435,6 +436,15 @@ export class QueueService implements OnModuleDestroy {
       promptLines.push('');
       promptLines.push(isZh ? '评审材料（全文）：' : 'Review Materials (full):');
       promptLines.push(content);
+      // T9：段落索引（passageId + 前 120 字），供评审员在意见中引用 passageRefs
+      const passages = extractPassages(content);
+      if (passages.length > 0) {
+        promptLines.push('');
+        promptLines.push(isZh ? '段落索引（引用时在 passageRefs 中给出 passageId）：' : 'Passage index (cite passageId in passageRefs when referencing):');
+        for (const p of passages) {
+          promptLines.push(`[${p.passageId}] ${p.text.substring(0, 120)}`);
+        }
+      }
     }
     // Contexte de défense (申辩材料) injecté pour le round de ré-évaluation
     if (defenseCtx) {
@@ -575,6 +585,8 @@ export class QueueService implements OnModuleDestroy {
         // T1 (Sprint 11.0)：新意见进入生命周期（candidate），终结时由 OpinionLifecycleService 收束 + 同题归并
         status: 'candidate',
         dedupKey: computeDedupKey(result.dimension, result.issue),
+        // T9：段落锚点 —— 模型输出 passageRefs 优先，否则按 issue 关键词匹配兜底
+        passageRefs: this.buildPassageRefs(result, content) as unknown as object,
         // T2 (Sprint 11.0)：评审员对争议的立场（agree/disagree/neutral），驱动全员 AGREE 收敛判定
         stance: normalizeStance(result.stance),
       },
@@ -587,6 +599,23 @@ export class QueueService implements OnModuleDestroy {
 
     this.logger.log(`Turn ${turnIndex}/${roleCode}: ${result.riskLevel} risk, ${result.confidenceScore} confidence`);
     await this.checkMeetingComplete(reviewId);
+  }
+
+  /**
+   * T9：构建意见的段落锚点。模型输出 passageRefs（[{passageId, excerpt}] 或 [passageId]）优先；
+   * 缺失时用 issue 关键词与原文段落匹配（linkPassages 确定性兜底）。
+   */
+  private buildPassageRefs(result: any, content?: string): Array<{ passageId: string; excerpt?: string }> {
+    const raw = result?.passageRefs;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw
+        .map((r: any) => (typeof r === 'string' ? { passageId: r } : { passageId: r?.passageId, excerpt: r?.excerpt }))
+        .filter((r: any) => r.passageId);
+    }
+    if (!content) return [];
+    const passages = extractPassages(content);
+    if (passages.length === 0) return [];
+    return linkPassages(result?.issue || '', passages, 2) as Array<{ passageId: string; excerpt?: string }>;
   }
 
   private buildReasoningSummary(obs: any): string {
