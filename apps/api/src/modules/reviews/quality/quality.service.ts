@@ -27,6 +27,7 @@ import {
   SYSTEM_PROMPT,
   parseModelOpinion,
 } from '../provider/model-adapter';
+import { ProviderPolicy, createProviderPolicyFromEnv } from '../provider/provider-policy';
 
 // ── Constants ──
 
@@ -81,12 +82,18 @@ export interface ListQualityFilter {
 
 @Injectable()
 export class QualityService {
+  // Sprint 10.1: Unified provider policy — single source of truth for external call decisions
+  private readonly providerPolicy: ProviderPolicy;
   private readonly logger = new Logger(QualityService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly reviewsService: ReviewsService,
-  ) {}
+  ) {
+    // P0-4 修复（Sprint 10.1 Round 2 评审）：providerPolicy 必须初始化，
+    // 否则 runAdapterOverride() 在非 mock provider 时抛 TypeError（Cannot read properties of undefined）。
+    this.providerPolicy = createProviderPolicyFromEnv();
+  }
 
   // ── Public API ──
 
@@ -326,7 +333,7 @@ export class QualityService {
       const diagnosis = await this.reviewsService.getDiagnosis(review.id, user);
       const rolesToSelect = (diagnosis?.recommendedRoles || [])
         .slice(0, maxRoles)
-        .map(r => ({ roleId: r.roleId, weight: r.weight }));
+        .map((r: any) => ({ roleId: r.roleId, weight: r.weight }));
 
       if (rolesToSelect.length === 0) {
         throw new Error('No roles available for selection');
@@ -459,11 +466,15 @@ export class QualityService {
     modelName: string | null;
     error: string | null;
   }> {
+    // Sprint 10.1: Enforce external call policy via ProviderPolicy (server-side trust boundary)
+    this.providerPolicy.assertAllowed({ tenantId, userId: '', action: 'completion' });
     const adapterEnv: ProviderEnv = {
       ...process.env,
       MODEL_PROVIDER: provider,
-      ALLOW_EXTERNAL_MODEL_CALLS: 'true',
     };
+    if (this.providerPolicy.canUseExternalModelCalls()) {
+      adapterEnv.ALLOW_EXTERNAL_MODEL_CALLS = 'true';
+    }
     const adapter = createProviderAdapter(adapterEnv);
 
     // If the factory fell back to mock (guard), report it

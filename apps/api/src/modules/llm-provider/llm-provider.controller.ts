@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, Delete, HttpCode } from '@nestjs/common';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { LlmProviderService, ProviderDto } from './llm-provider.service';
 
 /**
@@ -50,8 +51,9 @@ export class LlmProviderController {
 
   @Post()
   @RequirePermissions('admin.access')
-  create(@Body() body: any): Promise<ProviderDto> {
+  create(@CurrentUser() user: AuthUser, @Body() body: any): Promise<ProviderDto> {
     return this.service.create({
+      tenantId: user.tenantId,
       name: body.name,
       provider: body.provider,
       model: body.model,
