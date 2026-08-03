@@ -198,6 +198,8 @@ model Review {
 
   // --- Boucle de défense utilisateur ---
   defenseCount      Int          @default(0) @map("defense_count")  // nb de défenses déjà soumises
+  // --- T7 (Sprint 11.0) 可升级辩论：面板扩容次数（未收敛 → 扩容 → 仍未收敛 → 人工）---
+  escalationCount  Int          @default(0) @map("escalation_count")
   lastDefense       Json?        @map("last_defense")               // {content, expertCode, round}
   // --- Persistenter Link zum genutzten LlmProvider ---
   llmProviderId    String?      @map("llm_provider_id") @db.Uuid
