@@ -14,7 +14,8 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { WorkflowRegistry, WorkflowConfig, WorkflowId } from '../../workflow/workflow.registry';
+import { WorkflowRegistry, WorkflowConfig, WorkflowId, DEFAULT_SCORE_DISCIPLINE } from '../../workflow/workflow.registry';
+import type { ScoreDiscipline } from '../../workflow/workflow.registry';
 import { isReportable } from '../orchestrator/opinion-lifecycle';
 
 export interface DimensionScore {
@@ -36,6 +37,31 @@ export interface ScoringCoverage {
 export interface ScoringConfigSnapshot {
   readonly weights: Record<string, number>; // 实际用于评分的维度权重
   readonly thresholds: { readonly approved: number; readonly conditionallyApproved: number };
+  readonly scoreDiscipline: ScoreDiscipline; // T3：评分纪律快照（通胀判定可回放）
+}
+
+/** T3 (Sprint 11.0) 评分分布：基于 reportable 意见的 confidenceScore 统计（防通胀检测输入）。 */
+export interface ScoreDistribution {
+  readonly mean: number;       // 均值（0–100）
+  readonly stddev: number;     // 标准差
+  readonly above70Pct: number; // >70 分意见占比（0~1）
+  readonly count: number;      // 参与统计的意见数
+}
+
+/** 纯函数：计算分布。空数组 → 全 0。 */
+export function computeScoreDistribution(scores: readonly number[]): ScoreDistribution {
+  const valid = scores.filter((s) => typeof s === 'number' && Number.isFinite(s));
+  if (valid.length === 0) return { mean: 0, stddev: 0, above70Pct: 0, count: 0 };
+  const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+  const variance =
+    valid.reduce((a, b) => a + (b - mean) * (b - mean), 0) / valid.length;
+  const above70Pct = valid.filter((s) => s > 70).length / valid.length;
+  return {
+    mean: Number(mean.toFixed(2)),
+    stddev: Number(Math.sqrt(variance).toFixed(2)),
+    above70Pct: Number(above70Pct.toFixed(4)),
+    count: valid.length,
+  };
 }
 
 export interface ScoringResult {
@@ -46,6 +72,9 @@ export interface ScoringResult {
   readonly adoptedRate: number; // recommendation 类意见被保留比例（0–100）
   readonly coverage: ScoringCoverage;
   readonly configSnapshot: ScoringConfigSnapshot; // 审计快照
+  // --- T3 (Sprint 11.0) 评分纪律：分布 + 通胀检测 ---
+  readonly distribution: ScoreDistribution;
+  readonly inflationWarning: boolean; // above70Pct 超限 → true（不阻断，仅提示 + 审计）
 }
 
 const RISK_PENALTY: Record<string, number> = {
@@ -107,6 +136,14 @@ export class ScoringService {
       entry.confidences.push(typeof o.confidenceScore === 'number' ? o.confidenceScore : 0);
       entry.risks.push((o.riskLevel || 'info').toLowerCase());
     }
+
+    // T3 (Sprint 11.0)：评分分布 + 通胀检测（基于 reportable 意见 confidenceScore）
+    const discipline = config.scoreDiscipline ?? DEFAULT_SCORE_DISCIPLINE;
+    const distribution = computeScoreDistribution(
+      reportableOpinions.map((o) => (typeof o.confidenceScore === 'number' ? o.confidenceScore : 0)),
+    );
+    const inflationWarning =
+      distribution.count > 0 && distribution.above70Pct > discipline.maxAbove70Pct;
 
     const presentDims = [...byDim.keys()];
 
@@ -189,11 +226,15 @@ export class ScoringService {
           approved: config.verdictThresholds.approved,
           conditionallyApproved: config.verdictThresholds.conditionallyApproved,
         },
+        scoreDiscipline: discipline, // T3：审计快照含评分纪律（可回放通胀判定）
       },
+      distribution,
+      inflationWarning,
     };
 
     this.logger.log(
-      `Scored review=${reviewId.substring(0, 8)} workflow=${config.id} overall=${overallScore} verdict=${verdict}`,
+      `Scored review=${reviewId.substring(0, 8)} workflow=${config.id} overall=${overallScore} verdict=${verdict}` +
+        (inflationWarning ? ` INFLATION(>70=${(distribution.above70Pct * 100).toFixed(1)}% > ${(discipline.maxAbove70Pct * 100).toFixed(1)}%)` : ''),
     );
     return result;
   }

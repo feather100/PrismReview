@@ -93,6 +93,31 @@ const MOCK_RESPONSES: Record<
  * que le parseur fonctionne ; seul le *texte de réponse* (issue, recommendation,
  * dimension) et les instructions changent de langue.
  */
+/** T3 (Sprint 11.0) 评分纪律提示（防分数通胀；与 WorkflowConfig.scoreDiscipline 对齐）。 */
+export interface ScoreDisciplineHint {
+  readonly defaultAnchor: number;
+  readonly requireJustificationAbove70: boolean;
+}
+
+/**
+ * 生成评分纪律段落（版本化文本，v1）。
+ * 语义（来源 manuscript-review-skill 模式 N）：默认锚定分，>70 须论证。
+ */
+export function buildScoreDisciplineText(discipline: ScoreDisciplineHint, isZh: boolean): string {
+  const anchor = typeof discipline?.defaultAnchor === 'number' ? discipline.defaultAnchor : 55;
+  const requireJust = discipline?.requireJustificationAbove70 !== false;
+  if (isZh) {
+    return (
+      '\n\n评分纪律：默认假设每项得分为 ' + anchor + '/100（合格但需改进）。' +
+      (requireJust ? '超过 70/100 必须附明确论证，否则不得给分。' : '')
+    );
+  }
+  return (
+    '\n\nScoring discipline: default assumption is ' + anchor + '/100 (adequate but needs improvement).' +
+    (requireJust ? ' Scores above 70/100 require explicit justification; do not give them without one.' : '')
+  );
+}
+
 export function buildSystemPrompt(content: string): string {
   const isChinese = isLikelyChinese(content);
   if (isChinese) {

@@ -321,6 +321,9 @@ export class ReportingService {
       adoptedRate: result.adoptedRate,
       coverage: result.coverage,
       thresholds: result.configSnapshot.thresholds,
+      distribution: result.distribution,
+      inflationWarning: result.inflationWarning,
+      scoreDiscipline: result.configSnapshot.scoreDiscipline ?? { defaultAnchor: 55, maxAbove70Pct: 0.3, requireJustificationAbove70: true },
     };
   }
 

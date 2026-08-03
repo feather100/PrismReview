@@ -47,6 +47,10 @@ export class ReportScoringDto {
   @Expose() adoptedRate: number;
   @Expose() coverage: { expected: string[]; covered: string[]; missing: string[] };
   @Expose() thresholds: { approved: number; conditionallyApproved: number };
+  // --- T3 (Sprint 11.0) 评分纪律：分布 + 通胀提示 ---
+  @Expose() distribution: { mean: number; stddev: number; above70Pct: number; count: number };
+  @Expose() inflationWarning: boolean;
+  @Expose() scoreDiscipline: { defaultAnchor: number; maxAbove70Pct: number; requireJustificationAbove70: boolean };
 }
 
 export class ReportResponseDto {

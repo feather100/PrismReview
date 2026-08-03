@@ -3,7 +3,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { findExistingTerminalTurn } from '../orchestrator/idempotency';
 import { shouldDispatchTurn, resolveHardGates } from '../orchestrator/hard-gates';
 import { validateOpinion, StructuredOpinion, RiskLevel, computeDedupKey, normalizeStance } from '../orchestrator/opinion';
-import { ModelAdapter, MockAdapter, buildSystemPrompt, isLikelyChinese, parseModelOpinion } from '../provider/model-adapter';
+import { ModelAdapter, MockAdapter, buildSystemPrompt, buildScoreDisciplineText, isLikelyChinese, parseModelOpinion } from '../provider/model-adapter';
+import { WorkflowRegistry } from '../../workflow/workflow.registry';
 import { createProviderAdapter } from '../provider/provider-factory';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { MemoryServiceImpl, type MemoryService } from '../../memory/memory.service';
@@ -84,6 +85,8 @@ export class QueueService implements OnModuleDestroy {
     // P3 注入位（NodeCtx 等价）：真实服务由模块装配注入；手动 `new QueueService(prisma)` 时为 undefined → 降级 SYSTEM_PROMPT。
     private readonly promptService?: PromptServiceImpl,
     private readonly memoryService?: MemoryServiceImpl,
+    // T3 (Sprint 11.0)：workflow 配置（评分纪律等）。默认自实例化兼容手动 `new QueueService(prisma)`；Nest DI 注入真实实例。
+    private readonly workflowRegistry: WorkflowRegistry = new WorkflowRegistry(),
   ) {}
 
   /**
@@ -365,6 +368,31 @@ export class QueueService implements OnModuleDestroy {
     // 问题 2: 修复 CFO/PMO 英文 — 优先使用明确的 lang 设置（不再依赖从 objective 推断）
     const content = (payload as any).content as string | undefined;
     const isZh = forcedLang ? forcedLang === 'zh' : isLikelyChinese((objective || '') + '\n' + (content || ''));
+
+    // T3 (Sprint 11.0)：评分纪律注入 —— workflow.scoreDiscipline → system prompt（防分数通胀）。
+    // 两条路径（promptService.compose / buildSystemPrompt 兜底）统一在此追加，保证语义一致；
+    // mode 从 DB 读取（executeAgentTurn 无 review 对象，payload 不带 mode）。
+    let wfMode = 'enterprise';
+    try {
+      const reviewRow = await this.prisma.review.findUnique({
+        where: { id: reviewId },
+        select: { mode: true },
+      });
+      if (reviewRow?.mode) wfMode = reviewRow.mode;
+    } catch { /* 非致命：默认 enterprise */ }
+    const wfConfig = this.workflowRegistry.resolve(wfMode);
+    const scoreDiscipline = wfConfig?.scoreDiscipline;
+    if (scoreDiscipline) {
+      system =
+        system +
+        buildScoreDisciplineText(
+          {
+            defaultAnchor: scoreDiscipline.defaultAnchor,
+            requireJustificationAbove70: scoreDiscipline.requireJustificationAbove70,
+          },
+          isZh,
+        );
+    }
     const defenseCtx = (payload as any).defenseContext as string | undefined;
     const targetMention = (payload as any).targetMention as string | undefined;
 
