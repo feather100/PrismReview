@@ -10,6 +10,7 @@ export class ReviewResponseDto {
   @Expose() createdBy: string;
   @Expose() createdAt: string;
   @Expose() updatedAt: string;
+  @Expose() passages: Array<{ passageId: string; text: string }>; // T9：段落索引
 }
 
 export class DiagnosisResponseDto {

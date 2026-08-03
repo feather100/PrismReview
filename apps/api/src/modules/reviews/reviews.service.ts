@@ -11,6 +11,7 @@ import { ReportResponseDto } from './dto/report-response.dto';
 import { ReportingService } from './reporting/reporting.service';
 import { ScoringService } from './scoring/scoring.service';
 import { WorkflowRegistry } from '../workflow/workflow.registry';
+import { extractPassages } from './util/passages';
 import { ProviderPolicy, createProviderPolicyFromEnv } from './provider/provider-policy';
 import { LlmProviderService } from '../llm-provider/llm-provider.service';
 
@@ -109,6 +110,8 @@ export class ReviewsService {
         createdBy: user.id,
         title: dto.title,
         objective: dto.objective,
+        // T9：content 落库 + 段落级锚点索引（原文跳转）
+        ...(dto.content ? { content: dto.content, passages: extractPassages(dto.content) as unknown as object } : {}),
         inputType: dto.content ? 'both' : 'text',
         mode: dto.mode ?? 'round_robin',
         status: 'created',
@@ -439,6 +442,8 @@ export class ReviewsService {
     dto.createdBy = review.createdBy;
     dto.createdAt = review.createdAt?.toISOString?.() ?? review.createdAt;
     dto.updatedAt = review.updatedAt?.toISOString?.() ?? review.updatedAt;
+    // T9：段落索引（前端跳转原文用）
+    dto.passages = (review.passages as any) ?? [];
     return dto;
   }
 }
