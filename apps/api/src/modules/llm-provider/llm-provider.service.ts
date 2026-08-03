@@ -1,10 +1,12 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { encryptApiKey, decryptApiKey, maskApiKey, assertPublicUrl } from '../../common/utils/crypto';
+import { ProviderPolicy, createProviderPolicyFromEnv } from '../reviews/provider/provider-policy';
 import type { LlmProvider } from '@prisma/client';
 
 export interface ProviderDto {
   id: string;
+  tenantId?: string; // Sprint 10.1: tenant ownership (may be null for legacy providers)
   name: string;
   provider: string;
   model: string;
@@ -20,8 +22,12 @@ export interface ProviderDto {
 @Injectable()
 export class LlmProviderService {
   private readonly logger = new Logger(LlmProviderService.name);
+  // Sprint 10.1: Unified provider policy — single source of truth for external call decisions
+  private readonly providerPolicy: ProviderPolicy;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {
+    this.providerPolicy = createProviderPolicyFromEnv();
+  }
 
   /** Alle Provider — ohne den verschlüsselten Key. */
   async list(): Promise<ProviderDto[]> {
@@ -39,6 +45,7 @@ export class LlmProviderService {
    * Erstelle / aktualisiere einen Provider. apiKey (plain) wird verschlüsselt gespeichert.
    */
   async create(input: {
+    tenantId: string;
     name: string;
     provider: string;
     model: string;
@@ -46,16 +53,24 @@ export class LlmProviderService {
     apiKey?: string;
     activate?: boolean;
   }): Promise<ProviderDto> {
-    this.validate(input);
+    await this.validate(input);
+    this.providerPolicy.assertProviderTypeAllowed(input.provider);
     const apiKeyEnc = input.apiKey ? encryptApiKey(input.apiKey) : null;
 
-    // Wenn dieser Provider aktiviert wird → der Rest deaktivieren
+    // Sprint 10.1: tenantId required for new providers (from admin user context)
+    const tenantId = input.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('tenantId is required when creating a provider');
+    }
+
+    // Wenn dieser Provider aktiviert wird → der Rest deaktivieren (within tenant)
     if (input.activate) {
-      await this.prisma.llmProvider.updateMany({ data: { isActive: false } });
+      await this.prisma.llmProvider.updateMany({ where: { tenantId }, data: { isActive: false } });
     }
 
     const row = await this.prisma.llmProvider.create({
       data: {
+        tenantId,
         name: input.name,
         provider: input.provider,
         model: input.model,
@@ -91,8 +106,8 @@ export class LlmProviderService {
       });
     }
 
-    if (input.activate) {
-      await this.prisma.llmProvider.updateMany({ where: { NOT: { id } }, data: { isActive: false } });
+    if (input.activate && existing.tenantId) {
+      await this.prisma.llmProvider.updateMany({ where: { tenantId: existing.tenantId, NOT: { id } }, data: { isActive: false } });
     }
 
     const data: any = {};
@@ -136,6 +151,11 @@ export class LlmProviderService {
     const existing = await this.prisma.llmProvider.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Provider nicht gefunden');
 
+    // Sprint 10.1: Enforce external call policy for connection test
+    this.providerPolicy.assertAllowed({ tenantId: existing.tenantId ?? '', userId: '', action: 'test' });
+    // P1-2 修复（Sprint 10.1 Round 2 评审）：防御纵深 —— baseUrl 必须是公网可解析地址（防 SSRF 内网探测）
+    await assertPublicUrl(existing.baseUrl);
+
     const apiKey = existing.apiKeyEnc ? decryptApiKey(existing.apiKeyEnc) : undefined;
     const started = Date.now();
     try {
@@ -163,12 +183,16 @@ export class LlmProviderService {
   async resolveActiveAdapterEnv(): Promise<Record<string, string>> {
     const active = await this.prisma.llmProvider.findFirst({ where: { isActive: true } });
     if (!active || active.provider === 'mock') return {};
+    // Sprint 10.1: Do NOT set ALLOW_EXTERNAL_MODEL_CALLS directly — read from server env
     const env: any = {
       MODEL_PROVIDER: active.provider,
-      ALLOW_EXTERNAL_MODEL_CALLS: 'true',
       MODEL_NAME: active.model,
       MODEL_BASE_URL: active.baseUrl,
     };
+    // Only set external call flag from server trust boundary (env), never from DB
+    if (this.providerPolicy.canUseExternalModelCalls()) {
+      env.ALLOW_EXTERNAL_MODEL_CALLS = 'true';
+    }
     if (active.apiKeyEnc) env.MODEL_API_KEY = decryptApiKey(active.apiKeyEnc);
     return env;
   }
@@ -192,6 +216,7 @@ export class LlmProviderService {
     const hasKey = !!row.apiKeyEnc;
     return {
       id: row.id,
+      tenantId: row.tenantId ?? undefined,
       name: row.name,
       provider: row.provider,
       model: row.model,
@@ -203,5 +228,13 @@ export class LlmProviderService {
       lastTestAt: row.lastTestAt ?? undefined,
       createdAt: row.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * Sprint 10.1: Get raw provider record for server-side use (includes tenantId).
+   * NOT exposed via DTO — for internal tenant validation only.
+   */
+  async getRaw(id: string): Promise<LlmProvider | null> {
+    return this.prisma.llmProvider.findUnique({ where: { id } });
   }
 }

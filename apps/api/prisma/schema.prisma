@@ -25,6 +25,7 @@ model Tenant {
   knowledgeDocs   KnowledgeDocument[]
   knowledgeChunks KnowledgeChunk[]
   reviews         Review[]
+  llmProviders    LlmProvider[]
   auditLogs       AuditLog[]
   businessEvents  BusinessEvent[]
 
@@ -187,10 +188,7 @@ model Review {
   scoringConfig      Json?               @map("scoring_config")
 
   // --- Productization: per-review provider override (optional; falls back to global env default) ---
-  // providerOverride: "mock" | "lmstudio" | "openai_compatible"
-  // providerConfig:   { model?, baseUrl?, apiKey? } — apiKey 仅落库，绝不打印/返回给前端
   providerOverride String?      @map("provider_override")
-  providerConfig   Json?        @map("provider_config")
   // --- Langue forcée (zh / en). Null → auto-détection depuis l'objectif. ---
   reviewLang       String?      @map("review_lang")
 
@@ -206,6 +204,7 @@ model Review {
   llmProvider      LlmProvider? @relation(fields: [llmProviderId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([tenantId, createdBy, status])
+  @@index([llmProviderId])
   @@map("reviews")
 }
 
@@ -214,7 +213,8 @@ model Review {
 /// apiKey wird AES-256-GCM verschlüsselt abgelegt (der Secret kommt aus env oder wird per Setup gesetzt).
 model LlmProvider {
   id         String   @id @default(uuid()) @db.Uuid
-  name       String   @unique @map("name") // anzeigename: "LongCat-2.0", "LM Studio lokal" …
+  tenantId   String?  @map("tenant_id") @db.Uuid // Sprint 10.1: tenant ownership
+  name       String   @map("name") // anzeigename: "LongCat-2.0", "LM Studio lokal" …
   provider   String   @map("provider") // "openai_compatible" | "lmstudio" | "mock"
   model      String   @map("model") // modell-name, z.B. "LongCat-2.0"
   baseUrl    String   @map("base_url") // z.B. "https://api.longcat.chat/openai/v1"
@@ -224,9 +224,11 @@ model LlmProvider {
   lastTestAt String?  @map("last_test_at") // ISO-timestamp des letzten Verbindungs-Tests
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
+  tenant   Tenant?     @relation(fields: [tenantId], references: [id])
+  reviews  Review[]
 
-  reviews Review[]
-
+  @@unique([tenantId, name])
+  @@index([tenantId])
   @@index([isActive])
   @@map("llm_providers")
 }

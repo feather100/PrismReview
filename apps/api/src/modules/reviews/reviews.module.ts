@@ -17,13 +17,14 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { ToolModule } from '../tool/tool.module';
 import { WorkflowModule } from '../workflow/workflow.module';
 import { ReportingModule } from './reporting/reporting.module';
+import { LlmProviderModule } from '../llm-provider/llm-provider.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PromptServiceImpl } from '../prompt/prompt.service';
 import { AuditModule } from '../audit/audit.module';
 import { OpinionLifecycleService } from './orchestrator/opinion-lifecycle';
 
 @Module({
-  imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule, WorkflowModule, ReportingModule, AuditModule],
+  imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule, WorkflowModule, ReportingModule, AuditModule, LlmProviderModule],
   controllers: [ReviewsController, QualityController, DefenseController],
   providers: [
     ReviewsService,

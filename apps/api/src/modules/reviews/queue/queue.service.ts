@@ -5,8 +5,11 @@ import { shouldDispatchTurn, resolveHardGates } from '../orchestrator/hard-gates
 import { validateOpinion, StructuredOpinion, RiskLevel, computeDedupKey, normalizeStance } from '../orchestrator/opinion';
 import { ModelAdapter, MockAdapter, buildSystemPrompt, buildScoreDisciplineText, isLikelyChinese, parseModelOpinion } from '../provider/model-adapter';
 import { WorkflowRegistry } from '../../workflow/workflow.registry';
+import { decryptApiKey } from '../../../common/utils/crypto';
 import { createProviderAdapter } from '../provider/provider-factory';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
+import { ProviderPolicy, createProviderPolicyFromEnv } from '../provider/provider-policy';
+import { LlmProviderService } from '../../llm-provider/llm-provider.service';
 import { MemoryServiceImpl, type MemoryService } from '../../memory/memory.service';
 
 /** Push defense content into prepared prompt (multi-line safe). */
@@ -41,9 +44,9 @@ export class QueueService implements OnModuleDestroy {
 
   // Sprint 2.1: unified model adapter. Default: global (mock via factory,
   // external only when ALLOW_EXTERNAL_MODEL_CALLS=true + explicit env).
-  // Per-review override: 当 review 行带了 providerOverride + providerConfig 时，
-  // 按 review 配置构造独立 adapter（DB 里的 Config 优先，env 兜底）。
-  // Never logs nor leaks providerConfig.apiKey.
+  // Sprint 10.1: per-review override 不再从 payload.providerConfig 读取（该列已移除），
+  // 改由 resolveAdapter 从 DB llm_provider 记录解析；外部调用开关仅来自服务端 env（ProviderPolicy）。
+  // apiKey 在任何 log / observability / providerSource 中都不出现。
   private readonly defaultAdapter: ModelAdapter = createProviderAdapter();
 
   /**
@@ -52,32 +55,51 @@ export class QueueService implements OnModuleDestroy {
    *   2. 带了 → 构造独立 adapter（env 兜底 + config 覆盖，不污染全局）
    * apiKey 在任何 log / observability / providerSource 中都不出现。
    */
+  /**
+   * Sprint 10.1: Resolve adapter from DB provider record (never from payload config).
+   * External call switch comes ONLY from server env via ProviderPolicy.
+   */
   private async resolveAdapter(payload: any): Promise<ModelAdapter> {
-    const override: string | undefined = payload?.providerOverride;
-    const cfg: any = payload?.providerConfig;
-    if (!override) return this.defaultAdapter;
-    // 合并 env 兜底 + DB config 覆盖；apiKey 仅此处拼入，绝不落日志
+    const llmProviderId: string | undefined = payload?.llmProviderId;
+    if (!llmProviderId) return this.defaultAdapter;
+
+    // Fetch provider from DB (already validated for tenant ownership at creation)
+    const provider = this.llmProviderService
+      ? await this.llmProviderService.getRaw(llmProviderId)
+      : await this.prisma.llmProvider.findUnique({ where: { id: llmProviderId } });
+
+    if (!provider) return this.defaultAdapter;
+
+    // If provider is not mock, check external call policy (server-side trust boundary)
+    if (provider.provider !== 'mock') {
+      this.providerPolicy.assertAllowed({
+        tenantId: provider.tenantId ?? '',
+        userId: '',
+        action: 'completion',
+      });
+    }
+
+    // Build adapter env — ALLOW_EXTERNAL_MODEL_CALLS only from server env, never from DB
     const env: any = {
-      MODEL_PROVIDER: override,
-      ALLOW_EXTERNAL_MODEL_CALLS: 'true',
+      MODEL_PROVIDER: provider.provider,
+      MODEL_NAME: provider.model,
+      MODEL_BASE_URL: provider.baseUrl,
     };
-    if (cfg?.model) env.MODEL_NAME = cfg.model;
-    if (cfg?.baseUrl) env.MODEL_BASE_URL = cfg.baseUrl;
-    if (override === 'lmstudio' || override === 'openai_compatible') {
-      if (cfg?.apiKey) env.MODEL_API_KEY = cfg.apiKey;
-      else if (process.env.MODEL_API_KEY) env.MODEL_API_KEY = process.env.MODEL_API_KEY;
+    if (this.providerPolicy.canUseExternalModelCalls()) {
+      env.ALLOW_EXTERNAL_MODEL_CALLS = 'true';
+    }
+    if (provider.apiKeyEnc) {
+      env.MODEL_API_KEY = decryptApiKey(provider.apiKeyEnc);
     }
     return createProviderAdapter(env);
   }
 
-  /**
-   * 完成回调钩子（由 ReviewOrchestrator 在 onModuleInit 注入）。
-   * 当全部 turn 终态、meeting.complete 触发时，委派 orchestrator 走
-   * summarized(Moderator converge) → completed 脊柱。未注入时走 legacy 直接定终态。
-   */
+  private readonly MAX_RETRIES = 3;
   completionHook?: (reviewId: string) => Promise<void>;
 
-  private readonly MAX_RETRIES = 3;
+  // Sprint 10.1: Unified provider policy — single source of truth for external call decisions
+  private readonly providerPolicy: ProviderPolicy;
+
   private readonly POLL_INTERVAL = 100; // ms
 
   constructor(
@@ -87,7 +109,12 @@ export class QueueService implements OnModuleDestroy {
     private readonly memoryService?: MemoryServiceImpl,
     // T3 (Sprint 11.0)：workflow 配置（评分纪律等）。默认自实例化兼容手动 `new QueueService(prisma)`；Nest DI 注入真实实例。
     private readonly workflowRegistry: WorkflowRegistry = new WorkflowRegistry(),
-  ) {}
+    // Sprint 10.1：DB provider 解析（resolveAdapter 从 llm_provider 记录构造 adapter）
+    private readonly llmProviderService?: LlmProviderService,
+  ) {
+    // Sprint 10.1：Create policy from server env — business code must not set ALLOW_EXTERNAL_MODEL_CALLS directly
+    this.providerPolicy = createProviderPolicyFromEnv();
+  }
 
   /**
    * Enqueue a job. If a job with the same idempotency ID already exists, skip.
@@ -251,9 +278,9 @@ export class QueueService implements OnModuleDestroy {
         round, // P2-1：贯通到 turn 执行，供 reviewTurn.round 写入 + 语义元组幂等
         // 9.5b：round>=2 的辩论轮标记为 debate phase（mock debater，Contract §10）；P5 由 workflow pattern 覆盖
         phase: phaseFromPattern === 'debate' ? 'debate' : 'round_robin',
-        // 产品化：每 review 可覆盖 provider / model / apiKey（DB 优先，env 兜底）
+        // Sprint 10.1: Pass llmProviderId (no plaintext config in queue payload)
         providerOverride: review.providerOverride || undefined,
-        providerConfig: review.providerConfig || undefined,
+        llmProviderId: review.llmProviderId || undefined,
         reviewLang: review.reviewLang || undefined,
       }, jobId);
     }
