@@ -12,7 +12,7 @@
 | T1 意见生命周期 + 内容键去重 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T1_Opinion_Lifecycle.md》；报告只输出 accepted/downgraded（candidate 兜底），rejected 仅审计可查 |
 | T2 收敛判定显式化 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T2_Convergence_Signals.md》；终止条件 = 全员AGREE / noNewArguments / maxRounds 三选一 |
 | T3 评分纪律入模板 + 通胀检测 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T3_Score_Discipline.md》；workflow.scoreDiscipline + distribution/inflationWarning + prompt 注入 |
-| T4 观察与判断分离 | ⏳ 未开始 | — | 依赖 T1 |
+| T4 观察与判断分离 | ✅ 完成 | 2026-08-03 | 交付见《Sprint_11.0_T4_Scoring_Pass.md》；ScoringPass 基于观察聚合维度分（score 优先于 reviewer 自评） |
 | T5 按动作降级 | ⏳ 未开始 | — | — |
 | T6 预算硬闸启用 + 成本 hooks | ⏳ 未开始 | — | — |
 | T7–T14（P1/P2） | ⏳ 未开始 | — | 见下文 |
@@ -85,7 +85,7 @@
 - **估算：** 1.5–2.5 人日
 - **验收：** 通胀检测单测；prompt 版本化注册表有新版本记录
 
-### T4 观察与判断分离（来源：AssessmentAI 模式 O）
+### T4 观察与判断分离（来源：AssessmentAI 模式 O）—— ✅ 已完成（2026-08-03，见《Sprint_11.0_T4_Scoring_Pass.md》）
 
 - **现状：** Reviewer 直接产出带 confidenceScore 的 opinion
 - **改造：**
