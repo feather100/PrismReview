@@ -252,7 +252,7 @@ export class ReportingService {
     const reportableOpinions = dbOpinions.filter((o) => isReportable(o.status));
     const opinions = reportableOpinions.map((o) => {
       const role = turnToRole.get(o.turnId) ?? { code: 'unknown', name: 'Unknown' };
-      return { dimension: o.dimension, agentCode: role.code, agentName: role.name, riskLevel: o.riskLevel, issue: o.issue, recommendation: o.recommendation, confidenceScore: o.confidenceScore, status: o.status ?? 'accepted', resolutionReason: o.resolutionReason ?? null };
+      return { dimension: o.dimension, agentCode: role.code, agentName: role.name, riskLevel: o.riskLevel, issue: o.issue, recommendation: o.recommendation, confidenceScore: o.confidenceScore, score: o.score ?? null, status: o.status ?? 'accepted', resolutionReason: o.resolutionReason ?? null };
     });
 
     const risks = opinions.filter((o) => o.riskLevel === 'high' || o.riskLevel === 'medium').map((o) => ({

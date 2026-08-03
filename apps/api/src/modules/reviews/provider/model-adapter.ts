@@ -125,7 +125,7 @@ export function buildSystemPrompt(content: string): string {
       '你是一名资深架构评审专家。阅读以下方案，并用**中文**回答一个严格的 JSON 对象\n' +
       '(不要 markdown、不要推理过程、前后不要任何说明文字)。必须**只**包含以下键：\n' +
       'riskLevel (high|medium|low|info 之一), dimension (字符串，**用中文**), issue (字符串，**用中文**), ' +
-      'recommendation (字符串，**用中文**), confidenceScore (0-100 整数)。\n' +
+      'recommendation (字符串，**用中文**), confidenceScore (0-100 整数，可选——T4 起评审员观察不带分，由 Moderator 统一评分)。\n' +
       '重要：只输出原始 JSON 节点 —— 不要 ```json 围栏，不要翻译键为英文，' +
       '所有中文描述使用简体中文。'
     );
@@ -134,7 +134,7 @@ export function buildSystemPrompt(content: string): string {
     'You are an expert architecture reviewer. Read the proposal below and respond with ' +
     'ONE strict JSON object (no markdown, no commentary, no prose before or after) with EXACTLY these keys: ' +
     'riskLevel (one of: high|medium|low|info), dimension (string), issue (string), ' +
-    'recommendation (string), confidenceScore (integer 0-100). ' +
+    'recommendation (string), confidenceScore (integer 0-100, optional — reviewers no longer self-score; the Moderator scores dimensions). ' +
     'IMPORTANT: output the raw JSON object only — do not wrap in ```json fences, ' +
     'do not add any explanation, do not translate keys into Chinese.'
   );

@@ -32,6 +32,7 @@ import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { MemoryServiceImpl } from '../../memory/memory.service';
 import { KnowledgeService } from '../../knowledge/knowledge.service';
 import { OpinionLifecycleService } from './opinion-lifecycle';
+import { ScoringPassService } from '../scoring/scoring-pass';
 
 /**
  * P2-3（9.5a）+ 9.5b 须知悉项 1 & 3：summarized 节点的下一节点由
@@ -92,6 +93,8 @@ export class ReviewOrchestrator implements OnModuleInit {
     private readonly knowledgeService?: KnowledgeService,
     // T1 (Sprint 11.0)：意见生命周期（终结化 + 去重 + 审计）；Nest DI 注入，手动 new 时为 undefined → 跳过 finalize
     private readonly opinionLifecycleService?: OpinionLifecycleService,
+    // T4 (Sprint 11.0)：观察/判断分离 —— 收敛后评分 pass（Moderator 基于观察聚合维度分数）
+    private readonly scoringPassService?: ScoringPassService,
   ) {
     this.graph = this.buildGraph();
   }
@@ -405,6 +408,16 @@ export class ReviewOrchestrator implements OnModuleInit {
     };
     await this.checkpoint(reviewId, 'completed', completedState);
     await this.persistState(reviewId, completedState);
+
+    // T4 (Sprint 11.0)：观察/判断分离 —— 收敛后先跑评分 pass（Moderator 基于全部观察聚合维度质量分，
+    // 写入 ReviewOpinion.score）；失败不阻塞完成（评分回退 reviewer confidenceScore）。
+    if (this.scoringPassService) {
+      try {
+        await this.scoringPassService.run(reviewId);
+      } catch (e: any) {
+        this.logger.warn(`T4 scoringPass failed (non-blocking): ${e?.message}`);
+      }
+    }
 
     // T1 (Sprint 11.0)：意见终结化（candidate→accepted + 同题去重 + 审计）。
     // 失败不阻塞完成（log + continue）；报告侧 isReportable 含 candidate 兜底，不会空白。

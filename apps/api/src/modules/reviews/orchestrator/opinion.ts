@@ -51,7 +51,9 @@ export interface StructuredOpinion {
   readonly issue: string; // 非空
   readonly recommendation: string; // 非空
   readonly citations: readonly string[];
-  readonly confidenceScore: number; // [0,100] 整数
+  readonly confidenceScore?: number; // [0,100] 整数；T4 起评审员可省略（观察不带分），由 ScoringPass 以 score 为准
+  // --- T4 (Sprint 11.0) 观察/判断分离：Moderator 评分 pass 给出的维度质量分 ---
+  readonly score?: number; // [0,100] 整数；null = 未评分
   readonly reasoningSummary?: string;
   readonly modelOutputRef?: string; // 既有 5 态 providerSource 落库
   // --- T1 (Sprint 11.0) Opinion Lifecycle：生命周期状态（可选，向后兼容；未提供视为已受理）---
@@ -102,14 +104,27 @@ export function validateOpinion(
   if (!Array.isArray(o.citations) || !o.citations.every((c) => typeof c === 'string')) {
     errors.push('citations must be string[]');
   }
+  // T4：confidenceScore 可选（观察不带分），提供时校验 [0,100] 整数
   if (
-    typeof o.confidenceScore !== 'number' ||
-    !Number.isFinite(o.confidenceScore) ||
-    o.confidenceScore < 0 ||
-    o.confidenceScore > 100 ||
-    !Number.isInteger(o.confidenceScore)
+    o.confidenceScore !== undefined &&
+    (typeof o.confidenceScore !== 'number' ||
+      !Number.isFinite(o.confidenceScore) ||
+      o.confidenceScore < 0 ||
+      o.confidenceScore > 100 ||
+      !Number.isInteger(o.confidenceScore))
   ) {
     errors.push('confidenceScore must be integer [0,100]');
+  }
+  // T4：score（Moderator 评分 pass）提供时校验 [0,100] 整数
+  if (
+    o.score !== undefined &&
+    (typeof o.score !== 'number' ||
+      !Number.isFinite(o.score) ||
+      o.score < 0 ||
+      o.score > 100 ||
+      !Number.isInteger(o.score))
+  ) {
+    errors.push('score must be integer [0,100]');
   }
   if (o.modelOutputRef !== undefined && o.modelOutputRef !== null) {
     if (typeof o.modelOutputRef !== 'string') {

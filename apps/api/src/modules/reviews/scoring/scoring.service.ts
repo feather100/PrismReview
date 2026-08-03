@@ -122,26 +122,31 @@ export class ScoringService {
 
     const opinions = await this.prisma.reviewOpinion.findMany({
       where: { reviewId },
-      select: { dimension: true, riskLevel: true, confidenceScore: true, status: true },
+      select: { dimension: true, riskLevel: true, confidenceScore: true, status: true, score: true },
     });
     // T1 (Sprint 11.0)：评分只统计 reportable 意见（accepted/downgraded/candidate；rejected 重复/失败存根不计分，防通胀）
     const reportableOpinions = opinions.filter((o) => isReportable(o.status));
 
     // 按维度聚合
     const byDim = new Map<string, { confidences: number[]; risks: string[] }>();
+    // T4：有效分 = score（Moderator 评分 pass）优先，回退 reviewer confidenceScore；均缺省 → 0
+    const effectiveScore = (o: any): number => {
+      if (typeof o.score === 'number' && Number.isFinite(o.score)) return o.score;
+      if (typeof o.confidenceScore === 'number' && Number.isFinite(o.confidenceScore)) return o.confidenceScore;
+      return 0;
+    };
     for (const o of reportableOpinions) {
       const dim = o.dimension || '未分类';
       if (!byDim.has(dim)) byDim.set(dim, { confidences: [], risks: [] });
       const entry = byDim.get(dim)!;
-      entry.confidences.push(typeof o.confidenceScore === 'number' ? o.confidenceScore : 0);
+      entry.confidences.push(effectiveScore(o));
       entry.risks.push((o.riskLevel || 'info').toLowerCase());
     }
 
     // T3 (Sprint 11.0)：评分分布 + 通胀检测（基于 reportable 意见 confidenceScore）
     const discipline = config.scoreDiscipline ?? DEFAULT_SCORE_DISCIPLINE;
-    const distribution = computeScoreDistribution(
-      reportableOpinions.map((o) => (typeof o.confidenceScore === 'number' ? o.confidenceScore : 0)),
-    );
+    // T4：分布与通胀检测同样基于有效分（score 优先）
+    const distribution = computeScoreDistribution(reportableOpinions.map(effectiveScore));
     const inflationWarning =
       distribution.count > 0 && distribution.above70Pct > discipline.maxAbove70Pct;
 

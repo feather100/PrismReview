@@ -284,6 +284,8 @@ model ReviewOpinion {
   canonicalOpinionId String? @map("canonical_opinion_id") // 重复意见指向的 canonical opinion id
   // --- T2 (Sprint 11.0) 收敛信号：评审员对争议的立场（agree/disagree/neutral），驱动全员 AGREE 收敛判定 ---
   stance           String?  @default("neutral") @map("stance") // agree | disagree | neutral
+  // --- T4 (Sprint 11.0) 观察/判断分离：Moderator 评分 pass 给出的维度质量分（0-100）---
+  score            Int?     @map("score") // ScoringPass 在收敛后基于观察聚合赋值；null = 未评分（回退 reviewer confidenceScore）
 
   review Review     @relation(fields: [reviewId], references: [id])
   turn   ReviewTurn @relation(fields: [turnId], references: [id])

@@ -560,7 +560,8 @@ export class QueueService implements OnModuleDestroy {
         issue: result.issue,
         recommendation: result.recommendation,
         citations: [],
-        confidenceScore: result.confidenceScore,
+        // T4：观察不带分时占位 50（中性）；最终分数由 ScoringPass 写入 score
+        confidenceScore: typeof result.confidenceScore === 'number' ? result.confidenceScore : 50,
         reasoningSummary: this.buildReasoningSummary(observability),
         modelOutputRef: JSON.stringify(observability),
         // P3：prompt 版本溯源（ComposedPrompt.templateRefs 序列化）；未注入 promptService 时为 null
