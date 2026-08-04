@@ -500,13 +500,21 @@ export class ReviewOrchestrator implements OnModuleInit {
     const currentIds = new Set<string>(current.map((r: any) => r.roleId));
     if (currentIds.size === 0) return 0;
     const pool = await this.prisma.agentRole.findMany({
-      where: { status: 'enabled', id: { notIn: [...currentIds] } },
+      where: {
+        status: 'enabled',
+        // 2026-08-04 demo 修复：只扩容有 activeVersionId 的角色（否则 review.start 派发抛错 → 轮次卡死）
+        activeVersionId: { not: null },
+        id: { notIn: [...currentIds] },
+      },
       select: { id: true, code: true, name: true, type: true },
     });
     if (pool.length === 0) return 0;
+    // 排除明显测试/垃圾角色（p3_verify_*、monkey、test 等），避免污染评审面板
+    const cleanPool = pool.filter((r) => !/p3_|verify|monkey|test/i.test(r.code || ''));
+    const usable = cleanPool.length > 0 ? cleanPool : pool;
     // 优先非 preset（可加装角色），其次 preset
-    pool.sort((a, b) => (a.type === 'preset' ? 1 : 0) - (b.type === 'preset' ? 1 : 0));
-    const added = pool.slice(0, escalateBy);
+    usable.sort((a, b) => (a.type === 'preset' ? 1 : 0) - (b.type === 'preset' ? 1 : 0));
+    const added = usable.slice(0, escalateBy);
     const newSelection = {
       ...selection,
       roles: [

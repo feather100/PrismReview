@@ -72,3 +72,8 @@ apps/api/scripts/quality-benchmark.js
 
 # 调研 scratch 文件（根目录 _* 临时产物，勿入库）
 /_*
+
+# demo 临时产物
+/.demo-pids.json
+/.demo-api.log
+/.demo-run-output.txt

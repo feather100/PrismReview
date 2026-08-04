@@ -215,27 +215,19 @@ export class ReviewsService {
     }
 
     // Sprint 10.1: Pass llmProviderId to queue (not providerConfig)
-    const queuePayload: any = {
-      reviewId,
-      tenantId: user.tenantId,
-      round: 1,
-      llmProviderId: review.llmProviderId,
-      providerOverride: review.providerOverride,
-    };
-
+    // 修复（2026-08-04 demo 发现）：直接 enqueue agent.turn.execute 缺 roleVersionId/turnIndex/objective/content。
+    // 改为委托 queue 的 review.start 标准派发（解析角色版本 + turnIndex + 注入 objective/content/phase）。
     await this.prisma.review.update({
       where: { id: reviewId },
       data: { status: 'running', currentRound: 1 },
     });
 
-    // Enqueue turns for each role
-    for (const role of selection.roles) {
-      this.queueService.enqueue('agent.turn.execute', {
-        ...queuePayload,
-        roleId: role.roleId,
-        roleCode: role.roleCode,
-      });
-    }
+    this.queueService.enqueue('review.start', {
+      reviewId,
+      round: 1,
+      llmProviderId: review.llmProviderId,
+      providerOverride: review.providerOverride,
+    });
 
     return { reviewId, status: 'running', round: 1 };
   }
