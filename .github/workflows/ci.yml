@@ -20,7 +20,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+
           run_install: false
 
       - uses: actions/setup-node@v4
@@ -47,7 +47,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+
           run_install: false
 
       - uses: actions/setup-node@v4
@@ -97,7 +97,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+
           run_install: false
 
       - uses: actions/setup-node@v4
@@ -107,7 +107,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @prismreview/api prisma:generate
-      - run: pnpm --filter @prismreview/api prisma:migrate --name init --skip-generate || true
+      # migrations 目录被 .gitignore（仓库惯例不入库）→ CI 用 db push 直接同步 schema（避免 migrate dev 需要迁移文件/影子库）
+      - run: cd apps/api && npx prisma db push --accept-data-loss --skip-generate || true
 
       - name: Start API in background
         env:
