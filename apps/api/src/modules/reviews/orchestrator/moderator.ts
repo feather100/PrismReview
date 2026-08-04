@@ -277,6 +277,11 @@ export class MockModerator implements Moderator {
       // T8：风险分级 HITL —— 高风险低置信度意见 → 必过人工门（优先于收敛/升级/abort）
       decisionType = 'risk_gate_hitel';
       reasoning = `round-${round}: ${riskGateCount} high-risk low-confidence finding(s) (< ${RISK_GATE_MIN_CONFIDENCE}) → risk_gate_hitel (human gate)`;
+    } else if (state.humanGateApproved ?? false) {
+      // T8/T7 人工放行（resume）：风险门/扩容转人工后由人拍板 → 收敛交付报告
+      // （否则 round>=2 未收敛 + 已扩容一次会再次 escalate_to_human → 卡死/死循环）
+      decisionType = 'converge';
+      reasoning = `round-${round}: human gate approved (humanGateApproved=true) → converge to completed`;
     } else if (round >= 2 && convergenceOk) {
       // T2：显式收敛信号命中 → 收敛
       decisionType = 'converge';

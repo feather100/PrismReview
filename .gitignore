@@ -76,3 +76,4 @@ apps/api/scripts/quality-benchmark.js
 /.demo-pids.json
 /.demo-api.log
 /.demo-run-output.txt
+/.demo-run-err.txt

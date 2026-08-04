@@ -193,4 +193,23 @@ describe('MockModerator.decide — T8 risk-graded HITL', () => {
     }, DEFAULT_CONFIG);
     expect(d.decisionType).toBe('converge');
   });
+
+  it('converges after human approval even when not converged + escalation exhausted (demo resume)', async () => {
+    // 2026-08-04 research demo 场景：round-3 未收敛 + 已扩容一次（escalationCount=1）+ 人工放行
+    // → 必须 converge（否则再次 escalate_to_human → 死循环卡 interrupted）。
+    const prisma = makePrismaMock({
+      reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([
+        { riskLevel: 'high', confidenceScore: 40, stance: 'neutral' },
+        { riskLevel: 'high', confidenceScore: 40, stance: 'neutral' },
+      ]) },
+    });
+    const st = { ...state(3, { turnsByReviewer: { rv1: 1, rv2: 1 } }, 1), humanGateApproved: true };
+    const m = new MockModerator(prisma);
+    const d = await m.decide(st, {
+      maxRounds: 3, minRounds: 1, maxTurnsPerReviewer: 3, maxTokensPerReview: 200_000, maxCostPerReview: 0,
+    }, DEFAULT_CONFIG);
+    expect(d.decisionType).toBe('converge');
+    expect(d.reasoning).toContain('human gate approved');
+  });
 });

@@ -701,14 +701,34 @@ export class ReviewOrchestrator implements OnModuleInit {
     await this.checkpoint(reviewId, 'running', runningState);
     await this.persistState(reviewId, runningState);
 
-    // 3. 从中断点续跑：重派发当前轮 turns（幂等；已完成 skip）
+    // 3. 判定当前轮是否已全部终态（中断于 meeting.complete 之后：risk_gate / escalate_to_human 场景）。
+    //    全部终态 → 重派发会被幂等跳过、meeting.complete 入队也会被 processedIds 幂等拦截
+    //    （该轮已处理过一次）→ 直接推进收敛（handleTurnsComplete 内部有 status 守卫，幂等安全）。
+    const refreshed = await this.prisma.review.findUnique({ where: { id: reviewId } });
+    const selection = (refreshed?.roleSelection as any) ?? { roles: [] };
+    const expectedCount = (selection.roles as any[])?.length ?? 0;
+    const currentRound = (refreshed as any)?.currentRound ?? state.round;
+    const terminalForRound =
+      expectedCount > 0
+        ? await this.prisma.reviewTurn.count({
+            where: { reviewId, round: currentRound, status: { in: ['completed', 'failed', 'timeout'] } },
+          })
+        : 0;
+    if (expectedCount > 0 && terminalForRound >= expectedCount) {
+      await this.handleTurnsComplete(reviewId);
+      this.logger.log(
+        `resume: review ${reviewId.substring(0, 8)} → completion decision (all r${currentRound} turns terminal)`,
+      );
+      return;
+    }
+
+    // 4. 未全部终态（如用户在轮次中途 interrupt）：重派发当前轮 turns（幂等；未终态重新执行 →
+    //    逐 turn 触发完成判定），并补一次完成判定兜底。
     this.queue.enqueue('review.start', {
       reviewId: state.reviewId,
       sessionId: `session-${state.reviewId}-resume`,
       round: state.round,
     });
-    // 2026-08-04 research demo 修复：中断时全部 turn 已终态，重派发会被幂等跳过，
-    // meeting.complete 永不触发 → 评审卡在 running。补一次完成判定：若当前轮已全部终态则推进收敛。
     await this.queue.checkMeetingComplete(reviewId);
     this.logger.log(`resume: review ${reviewId.substring(0, 8)} → running (r${state.round} redispatched)`);
   }
