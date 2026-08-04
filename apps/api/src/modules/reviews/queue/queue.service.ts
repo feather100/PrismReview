@@ -9,6 +9,7 @@ import { decryptApiKey } from '../../../common/utils/crypto';
 import { createProviderAdapter } from '../provider/provider-factory';
 import { classifyTurnError } from '../provider/degradation';
 import { extractPassages, linkPassages, Passage } from '../util/passages';
+import { buildDebateContext, PriorOpinion } from '../util/debate-context';
 import { PromptServiceImpl } from '../../prompt/prompt.service';
 import { ProviderPolicy, createProviderPolicyFromEnv } from '../provider/provider-policy';
 import { LlmProviderService } from '../../llm-provider/llm-provider.service';
@@ -446,6 +447,16 @@ export class QueueService implements OnModuleDestroy {
         }
       }
     }
+    // T12：辩论轮注入其他专家上轮意见（排除自己 + 滚动最近 2 轮）
+    if (turnPhase === 'debate' && round >= 2) {
+      const debateCtx = await this.buildDebateContext(reviewId, roleVersionId, round);
+      if (debateCtx) {
+        promptLines.push('');
+        promptLines.push(isZh ? '其他专家的上轮意见（回应这些意见，可同意或反驳）：' : 'Other experts\' prior opinions (respond to these — agree or rebut):');
+        promptLines.push(debateCtx);
+      }
+    }
+
     // Contexte de défense (申辩材料) injecté pour le round de ré-évaluation
     if (defenseCtx) {
       promptLines.push('');
@@ -599,6 +610,38 @@ export class QueueService implements OnModuleDestroy {
 
     this.logger.log(`Turn ${turnIndex}/${roleCode}: ${result.riskLevel} risk, ${result.confidenceScore} confidence`);
     await this.checkMeetingComplete(reviewId);
+  }
+
+  /**
+   * T12：加载辩论上下文 —— 之前轮次（round < 当前）的其他专家意见（排除自己），滚动最近 N 轮。
+   * 返回格式化字符串；无他人意见返回空串。
+   */
+  private async buildDebateContext(reviewId: string, excludeReviewerId: string, currentRound: number, windowRounds = 2): Promise<string> {
+    try {
+      const priorTurns = await this.prisma.reviewTurn.findMany({
+        where: { reviewId, round: { lt: currentRound }, status: { in: ['completed', 'failed'] } },
+        select: { id: true, roleVersionId: true, round: true },
+      });
+      if (priorTurns.length === 0) return '';
+      const turnIds = priorTurns.map((t) => t.id);
+      const opinions = await this.prisma.reviewOpinion.findMany({
+        where: { turnId: { in: turnIds }, status: { not: 'rejected' } },
+        select: { turnId: true, dimension: true, issue: true, recommendation: true, riskLevel: true },
+      });
+      const turnBy = new Map(priorTurns.map((t) => [t.id, t]));
+      const prior: PriorOpinion[] = opinions
+        .map((o) => {
+          const t = turnBy.get(o.turnId);
+          return t
+            ? { reviewerId: t.roleVersionId, round: t.round, dimension: o.dimension, issue: o.issue, recommendation: o.recommendation, riskLevel: o.riskLevel }
+            : null;
+        })
+        .filter((x): x is PriorOpinion => x !== null);
+      return buildDebateContext(prior, excludeReviewerId, windowRounds);
+    } catch (e: any) {
+      this.logger.warn(`buildDebateContext failed (non-fatal): ${e?.message}`);
+      return '';
+    }
   }
 
   /**

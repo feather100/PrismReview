@@ -20,7 +20,8 @@
 | T9 段落级锚点 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T9_Passage_Anchor.md》 | passageId 切分 + 意见 passageRefs + 报告/详情暴露 |
 | T10 校准对照 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T10_Calibration.md》 | AI vs 人工：\|Δ\| + 相似度 + 越阈值标记 + POST /calibrate |
 | T11 会话级隔离加固 | ✅ 完成（2026-08-03） | 见《Sprint_11.0_T11_Session_Isolation.md》 | 隔离审计 + 并发回归测试（5 场无串场） |
-| T12–T14（P2） | ⏳ 未开始 | — | 见下文 |
+| T12 排除自己历史的滚动上下文 | ✅ 完成（2026-08-04） | 见《Sprint_11.0_T12_Debate_Context.md》 | debate 轮注入他人上轮意见（排除自己 + 滚动 2 轮） |
+| T13–T14（P2） | ⏳ 未开始 | — | 见下文 |
 
 ---
 
