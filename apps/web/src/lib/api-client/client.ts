@@ -29,7 +29,7 @@ export interface RoleSelectionResponse { roles: SelectedRole[]; }
 export interface StartReviewResponse { sessionId: string; status: 'running'; }
 
 export interface ReportActionItem { title: string; sourceAgent: string; priority: string; status: string; }
-export interface ReportOpinion { dimension: string; agentCode: string; agentName: string; riskLevel: string; issue: string; recommendation: string; confidenceScore: number; }
+export interface ReportOpinion { dimension: string; agentCode: string; agentName: string; riskLevel: string; issue: string; recommendation: string; confidenceScore: number; score: number | null; passageRefs: Array<{ passageId: string; excerpt?: string }>; status?: string; resolutionReason?: string | null; }
 export interface ReportRisk { title: string; riskLevel: string; sourceAgent: string; dimension: string; description: string; }
 export interface ReportMetrics { p0RiskCount: number; totalRiskCount: number; adoptionRate: number; durationMinutes: number; totalRoles: number; }
 export interface ReportLowConfidenceItem { agentCode: string; agentName: string; issue: string; confidenceScore: number; }
@@ -39,6 +39,17 @@ export interface ReportResponse {
   executiveSummary: string; metrics: ReportMetrics; risks: ReportRisk[]; opinions: ReportOpinion[];
   actionItems: ReportActionItem[]; lowConfidenceItems: ReportLowConfidenceItem[];
   providerSummary?: { totalTurns: number; bySource: Record<string, number>; fallbackCount: number; failedCount: number; models: string[]; hasRealProvider: boolean; };
+  // T3/T4：加权多维评分 + 分布 + 通胀提示
+  scoring?: {
+    workflowId: string; workflowName: string; overallScore: number;
+    dimensionScores: Array<{ dimension: string; weight: number; weightedScore: number }>;
+    verdict: string; adoptedRate: number;
+    coverage: { expected: string[]; covered: string[]; missing: string[] };
+    thresholds: { approved: number; conditionallyApproved: number };
+    distribution: { mean: number; stddev: number; above70Pct: number; count: number };
+    inflationWarning: boolean;
+    scoreDiscipline: { defaultAnchor: number; maxAbove70Pct: number; requireJustificationAbove70: boolean };
+  };
 }
 
 export interface CreateReviewInput {
@@ -46,7 +57,7 @@ export interface CreateReviewInput {
   provider?: { provider: 'mock' | 'lmstudio' | 'openai_compatible'; model?: string; baseUrl?: string; apiKey?: string; };
   lang?: 'zh' | 'en'; // 强制专家回复语言（默认 auto-detect）
 }
-export interface ReviewResponse { id: string; title: string; status: string; }
+export interface ReviewResponse { id: string; title: string; status: string; passages?: Array<{ passageId: string; text: string }>; }
 export interface ReviewListItem { id: string; title: string; objective: string; status: string; mode: string; createdAt: string; updatedAt: string; }
 export interface ReviewListResponse { items: ReviewListItem[]; total: number; page: number; limit: number; totalPages: number; offset?: number; }
 export interface GetReviewsParams { status?: string; mode?: string; search?: string; page?: number; limit?: number; offset?: number; }

@@ -28,6 +28,7 @@ export default function ReportPage({ reviewId }: { reviewId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloadingMd, setDownloadingMd] = useState(false);
+  const [passages, setPassages] = useState<Array<{ passageId: string; text: string }>>([]);
 
   const router = useRouter();
 
@@ -49,6 +50,7 @@ export default function ReportPage({ reviewId }: { reviewId: string }) {
     // First fetch review status to avoid ugly backend errors
     apiClient.getReview(reviewId)
       .then((review) => {
+        setPassages(review.passages ?? []);
         if (review.status === 'created' || review.status === 'diagnosed' || review.status === 'running') {
           setError(`该评审尚未完成（当前状态：${review.status}），暂无报告。`);
           setLoading(false);
@@ -116,8 +118,25 @@ export default function ReportPage({ reviewId }: { reviewId: string }) {
     { title: '风险', dataIndex: 'riskLevel', key: 'riskLevel', render: (text: string) => <RiskTag level={text} /> },
     { title: '问题', dataIndex: 'issue', key: 'issue', width: '25%' },
     { title: '建议', dataIndex: 'recommendation', key: 'recommendation', width: '30%' },
-    { title: '置信度', dataIndex: 'confidenceScore', key: 'confidenceScore', render: (num: number) => `${num}%` },
+    { title: '置信度', dataIndex: 'confidenceScore', key: 'confidenceScore', render: (num: number, record: any) => `${record.score ?? num}%` },
+    // T9：段落引用
+    { title: '原文引用', dataIndex: 'passageRefs', key: 'passageRefs', width: 140, render: (refs: Array<{ passageId: string; excerpt?: string }>) => (
+      refs && refs.length > 0 ? (
+        <Space wrap size={4}>
+          {refs.map((r) => (
+            <Tag key={r.passageId} color="geekblue" style={{ cursor: 'pointer' }} onClick={() => scrollToPassage(r.passageId)}>
+              {r.passageId}
+            </Tag>
+          ))}
+        </Space>
+      ) : <Text type="secondary">—</Text>
+    ) },
   ];
+
+  const scrollToPassage = (passageId: string) => {
+    const el = document.getElementById(`passage-${passageId}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', paddingBottom: 64 }}>
@@ -205,7 +224,54 @@ export default function ReportPage({ reviewId }: { reviewId: string }) {
         </Row>
       </Card>
 
-      {/* 3. Action Items */}
+      {/* 3. Scoring (T3/T4) */}
+      {data.scoring && (
+        <Card title="2. 加权多维评分" style={{ marginBottom: 24 }}>
+          <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
+            <Col span={6}>
+              <div style={{ textAlign: 'center', padding: '16px 0', background: '#f0f5ff', borderRadius: 8 }}>
+                <div style={{ fontSize: 32, fontWeight: 'bold', color: data.scoring.verdict === 'approved' ? '#52c41a' : data.scoring.verdict === 'rejected' ? '#ff4d4f' : '#faad14' }}>
+                  {data.scoring.overallScore}
+                </div>
+                <div style={{ color: '#666' }}>综合评分（0–100）</div>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div style={{ textAlign: 'center', padding: '16px 0', background: '#fafafa', borderRadius: 8 }}>
+                <div style={{ fontSize: 24, fontWeight: 'bold' }}>{data.scoring.distribution.mean}</div>
+                <div style={{ color: '#666' }}>意见均分</div>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div style={{ textAlign: 'center', padding: '16px 0', background: '#fafafa', borderRadius: 8 }}>
+                <div style={{ fontSize: 24, fontWeight: 'bold' }}>{(data.scoring.distribution.above70Pct * 100).toFixed(1)}%</div>
+                <div style={{ color: '#666' }}>高分占比（{'>'}70）</div>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div style={{ textAlign: 'center', padding: '16px 0', background: '#fff7e6', borderRadius: 8 }}>
+                <div style={{ fontSize: 20, fontWeight: 'bold', color: data.scoring.inflationWarning ? '#fa8c16' : '#52c41a' }}>
+                  {data.scoring.inflationWarning ? '⚠ 通胀预警' : '✓ 分布正常'}
+                </div>
+                <div style={{ color: '#666' }}>分数通胀检测</div>
+              </div>
+            </Col>
+          </Row>
+          <Table
+            size="small"
+            pagination={false}
+            rowKey={(r) => r.dimension}
+            dataSource={data.scoring.dimensionScores}
+            columns={[
+              { title: '维度', dataIndex: 'dimension', key: 'dimension' },
+              { title: '权重', dataIndex: 'weight', key: 'weight', render: (w: number) => (w * 100).toFixed(1) + '%' },
+              { title: '加权得分', dataIndex: 'weightedScore', key: 'weightedScore' },
+            ]}
+          />
+        </Card>
+      )}
+
+      {/* 4. Action Items */}
       <Card title="2. 整改行动项" style={{ marginBottom: 24 }}>
         <Table 
           columns={actionColumns} 
@@ -247,6 +313,20 @@ export default function ReportPage({ reviewId }: { reviewId: string }) {
         />
       </Card>
       
+      {/* 5b. Passage Viewer (T9) */}
+      {passages.length > 0 && (
+        <Card title="5. 原文段落（点击意见中的 passageId 跳转）" style={{ marginBottom: 24 }}>
+          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            {passages.map((p) => (
+              <div key={p.passageId} id={`passage-${p.passageId}`} style={{ padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
+                <Tag color="geekblue" style={{ marginRight: 8 }}>{p.passageId}</Tag>
+                <Text>{p.text}</Text>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* 6. Low Confidence Items */}
       {data.lowConfidenceItems && data.lowConfidenceItems.length > 0 && (
         <Card title="5. 低置信度意见 (需要人工复核)" style={{ marginBottom: 24, borderColor: '#faad14' }}>
