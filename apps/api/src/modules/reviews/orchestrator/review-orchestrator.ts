@@ -707,6 +707,9 @@ export class ReviewOrchestrator implements OnModuleInit {
       sessionId: `session-${state.reviewId}-resume`,
       round: state.round,
     });
+    // 2026-08-04 research demo 修复：中断时全部 turn 已终态，重派发会被幂等跳过，
+    // meeting.complete 永不触发 → 评审卡在 running。补一次完成判定：若当前轮已全部终态则推进收敛。
+    await this.queue.checkMeetingComplete(reviewId);
     this.logger.log(`resume: review ${reviewId.substring(0, 8)} → running (r${state.round} redispatched)`);
   }
 

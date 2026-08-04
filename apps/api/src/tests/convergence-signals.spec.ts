@@ -215,8 +215,8 @@ describe('MockModerator.decide — T2 convergence', () => {
     const prisma = decidePrisma({
       currentTurns: [{ id: 't1' }, { id: 't2' }],
       currentOpinions: [
-        { riskLevel: 'high', stance: 'neutral', dedupKey: 'new1' },
-        { riskLevel: 'high', stance: 'neutral', dedupKey: 'new2' },
+        { riskLevel: 'high', stance: 'neutral', dedupKey: 'new1', confidenceScore: 80 },
+        { riskLevel: 'high', stance: 'neutral', dedupKey: 'new2', confidenceScore: 80 },
       ],
       prevTurns: [], prevOpinions: [],
     });

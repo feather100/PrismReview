@@ -31,7 +31,6 @@ __pycache__/
 uv.lock
 
 # Prisma
-apps/api/prisma/migrations/
 
 # MinIO data
 data/minio/
@@ -70,10 +69,10 @@ apps/api/scripts/verify-*.js
 # Sprint 4.0 quality benchmark CLI (local dev tool)
 apps/api/scripts/quality-benchmark.js
 
-# µ÷ÑÐ scratch ÎÄ¼þ£¨¸ùÄ¿Â¼ _* ÁÙÊ±²úÎï£¬ÎðÈë¿â£©
+# ï¿½ï¿½ï¿½ï¿½ scratch ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½Ä¿Â¼ _* ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï£¬ï¿½ï¿½ï¿½ï¿½â£©
 /_*
 
-# demo ÁÙÊ±²úÎï
+# demo ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½
 /.demo-pids.json
 /.demo-api.log
 /.demo-run-output.txt

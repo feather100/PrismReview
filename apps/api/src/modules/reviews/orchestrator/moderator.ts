@@ -255,7 +255,7 @@ export class MockModerator implements Moderator {
     } else if (costCapEnabled && !maxCostOk) {
       // T6：成本超限 → 强制收敛（进入评分阶段产出报告），不 abort；审计成本事件
       decisionType = 'converge';
-      reasoning = `cost cap reached (\${usage.totalCost.toFixed(4)} > \${gates.maxCostPerReview}) → forced converge (scoring pass)`;
+      reasoning = `cost cap reached ($${usage.totalCost.toFixed(4)} > $${gates.maxCostPerReview}) → forced converge (scoring pass)`;
       void this.audit
         ?.log({
           tenantId: '00000000-0000-0000-0000-000000000000',
@@ -273,27 +273,26 @@ export class MockModerator implements Moderator {
       // 禁止 converge → 返回 advance_round（9.5b 同样进入 round-2 派发）。
       decisionType = 'advance_round';
       reasoning = `round=${round} < minRounds=${gates.minRounds}: minRounds not met → must continue (advance_round)`;
-    } else if (round >= gates.maxRounds) {
-      // 9.5b max_rounds 兜底：到顶仍冲突/未决 → 强停（不无限辩论；Contract §5.3）
-      decisionType = 'force_stop';
-      reasoning = `round=${round} >= maxRounds=${gates.maxRounds}: max rounds reached → force_stop (aborted)`;
+    } else if (riskGateRequired && !(state.humanGateApproved ?? false)) {
+      // T8：风险分级 HITL —— 高风险低置信度意见 → 必过人工门（优先于收敛/升级/abort）
+      decisionType = 'risk_gate_hitel';
+      reasoning = `round-${round}: ${riskGateCount} high-risk low-confidence finding(s) (< ${RISK_GATE_MIN_CONFIDENCE}) → risk_gate_hitel (human gate)`;
     } else if (round >= 2 && convergenceOk) {
-      // T2 + T8：显式收敛信号命中；若存在高风险低置信度意见 → 必过人工门
-      if (riskGateRequired && !(state.humanGateApproved ?? false)) {
-        decisionType = 'risk_gate_hitel';
-        reasoning = `round-${round}: ${riskGateCount} high-risk low-confidence finding(s) (< ${RISK_GATE_MIN_CONFIDENCE}) → risk_gate_hitel (human gate)`;
-      } else {
-        decisionType = 'converge';
-        reasoning = `round-${round}: convergence signal reached (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → converge`;
-      }
-    } else if (round >= 2 && !convergenceOk && (state.escalationCount ?? 0) < ESCALATE_MAX) {
-      // T7：辩论未收敛（无信号）→ 可升级：扩大评审面板（扩容 1–2 角色后重派发一轮）
+      // T2：显式收敛信号命中 → 收敛
+      decisionType = 'converge';
+      reasoning = `round-${round}: convergence signal reached (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → converge`;
+    } else if (round >= 2 && !convergenceOk && (state.escalationCount ?? 0) < ESCALATE_MAX && round + 1 <= gates.maxRounds) {
+      // T7：辩论未收敛且有扩容空间 → 扩大评审面板（扩容 1–2 角色后重派发一轮）
       decisionType = 'escalate';
       reasoning = `round-${round}: no convergence signal (allAgree=${allAgreeOk}, noNewArguments=${noNewArgumentsOk}) → escalate (panel expansion #${(state.escalationCount ?? 0) + 1})`;
     } else if (round >= 2 && !convergenceOk) {
-      // T7：扩容后仍未收敛 → 转人工（escalate_to_human / HITL 中断）
+      // T7：扩容后仍未收敛 / 无扩容空间 → 转人工（优雅退出，非 abort）
       decisionType = 'escalate_to_human';
       reasoning = `round-${round}: no convergence signal after ${(state.escalationCount ?? 0)} expansion(s) → escalate_to_human`;
+    } else if (round >= gates.maxRounds) {
+      // 9.5b max_rounds 兜底：非人工路径到顶 → 强停（最后手段）
+      decisionType = 'force_stop';
+      reasoning = `round=${round} >= maxRounds=${gates.maxRounds}: max rounds reached → force_stop (aborted)`;
     } else if (conflict && (!config || round >= config.debateAfterRound)) {
       // 9.5b round-2 mock debater：存在 high-risk 冲突且已达 debateAfterRound → 继续辩论
       // 向后兼容：未传 config（旧测试）时 !config=true → 保持原有 conflict→continue_debate 行为
@@ -313,12 +312,6 @@ export class MockModerator implements Moderator {
       decisionType = 'ask_user_defense';
       reasoning = `round-${round}: user @mentioned expert=${mentionedExpert} (direction: "${(state as any).mentionDirection ?? 'n/a'}") → ask_user_defense (defense #${defenseCount + 1})`;
     }
-    else if (riskGateRequired && !(state.humanGateApproved ?? false)) {
-      // T8：风险分级 HITL —— 默认收敛前：高风险低置信度意见 → 必过人工门
-      decisionType = 'risk_gate_hitel';
-      reasoning = `round-${round}: ${riskGateCount} high-risk low-confidence finding(s) (< ${RISK_GATE_MIN_CONFIDENCE}) → risk_gate_hitel (human gate)`;
-    }
-
     // 审计落库（§5.4）
     const record = await this.prisma.moderatorDecision.create({
       data: {

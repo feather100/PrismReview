@@ -234,19 +234,18 @@ export class ReviewsService {
 
   async interrupt(reviewId: string, user: any): Promise<any> {
     await this.assertReview(reviewId, user.tenantId, ['running']);
-    await this.prisma.review.update({
-      where: { id: reviewId },
-      data: { status: 'interrupted' },
-    });
+    // 2026-08-04 demo 修复：原实现仅 status='interrupted'（stub），无 HITL 超时兜底。
+    // 委托 orchestrator.interrupt（置标志 + park + 120s 自动恢复）。
+    await this.orchestrator.interrupt(reviewId);
     return { reviewId, status: 'interrupted' };
   }
 
   async resume(reviewId: string, user: any): Promise<any> {
     await this.assertReview(reviewId, user.tenantId, ['interrupted']);
-    await this.prisma.review.update({
-      where: { id: reviewId },
-      data: { status: 'running' },
-    });
+    // 2026-08-04 demo 修复：原实现仅 status='running'（stub），不走 orchestrator
+    // → 无 humanGateApproved、无重派发/完成判定 → 中断后评审卡死。
+    // 委托 orchestrator.resume（置人工放行 + 重派发 + checkMeetingComplete 推进收敛）。
+    await this.orchestrator.resume(reviewId);
     return { reviewId, status: 'running' };
   }
 

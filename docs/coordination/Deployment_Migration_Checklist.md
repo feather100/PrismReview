@@ -77,7 +77,7 @@ npx prisma migrate deploy        # 生产风格：只应用待迁移，不重置
 
 | 风险 | 影响 | 对策 |
 |------|------|------|
-| **迁移文件不入库（最大隐患）** | 新环境无迁移文件 → 无法建库/升级 | 发布物打包 migrations；建议后续把 `.gitignore` 中 `apps/api/prisma/migrations/` 移除（历史约定，需团队确认） |
+| ~~迁移文件不入库~~ | ~~新环境无迁移文件~~ | ✅ 已解决（2026-08-04）：迁移文件已入库（.gitignore 移除），CI 用 `migrate deploy` |
 | 迁移 13 删列 | provider_config 数据丢失 | 执行前 pg_dump；回滚脚本已提供 |
 | 分支/环境 schema 漂移 | migrate deploy 报 pending 与预期不符 | 以 §4 验证清单为准；异常时对比迁移表 `_prisma_migrations` |
 | 已有数据 + 新列 | 加 NOT NULL 列默认值 | T1/T2 均带 DEFAULT，存量行安全（已实跑验证） |

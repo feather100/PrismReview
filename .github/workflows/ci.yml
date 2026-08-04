@@ -107,8 +107,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @prismreview/api prisma:generate
-      # migrations 目录被 .gitignore（仓库惯例不入库）→ CI 用 db push 直接同步 schema（避免 migrate dev 需要迁移文件/影子库）
-      - run: cd apps/api && npx prisma db push --accept-data-loss --skip-generate || true
+      # migrations 已入库（2026-08-04）→ CI 用标准 migrate deploy 应用全部迁移
+      - run: cd apps/api && npx prisma migrate deploy || true
 
       - name: Start API in background
         env:

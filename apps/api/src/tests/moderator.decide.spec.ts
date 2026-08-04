@@ -93,7 +93,7 @@ describe('MockModerator.decide', () => {
   it('escalate (panel expansion) when round>=2 not converged with high-risk conflict (T7)', async () => {
     const prisma = makePrismaMock({
       reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]) },
-      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high' }, { riskLevel: 'high' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high', confidenceScore: 80 }, { riskLevel: 'high', confidenceScore: 80 }]) },
     });
     const m = new MockModerator(prisma);
     const d = await m.decide(state(2, { turnsByReviewer: { rv1: 1, rv2: 1 } }), {
@@ -106,7 +106,7 @@ describe('MockModerator.decide', () => {
   it('escalate_to_human after panel expansion still not converged (T7)', async () => {
     const prisma = makePrismaMock({
       reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]) },
-      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high' }, { riskLevel: 'high' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high', confidenceScore: 80 }, { riskLevel: 'high', confidenceScore: 80 }]) },
     });
     const m = new MockModerator(prisma);
     const d = await m.decide(state(2, { turnsByReviewer: { rv1: 1, rv2: 1 } }, 1), {
@@ -119,7 +119,7 @@ describe('MockModerator.decide', () => {
   it('continue_debate at round 1 when debateAfterRound=1 (code-review style)', async () => {
     const prisma = makePrismaMock({
       reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]) },
-      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high' }, { riskLevel: 'high' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high', confidenceScore: 80 }, { riskLevel: 'high', confidenceScore: 80 }]) },
     });
     const m = new MockModerator(prisma);
     const d = await m.decide(state(1, { turnsByReviewer: { rv1: 1, rv2: 1 } }), {
@@ -145,7 +145,7 @@ describe('MockModerator.decide', () => {
     // （reasoning 标注 debate deferred）。此处锁定当前行为，防止无意回归。
     const prisma = makePrismaMock({
       reviewTurn: { findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]) },
-      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high' }, { riskLevel: 'high' }]) },
+      reviewOpinion: { findMany: jest.fn().mockResolvedValue([{ riskLevel: 'high', confidenceScore: 80 }, { riskLevel: 'high', confidenceScore: 80 }]) },
     });
     const m = new MockModerator(prisma);
     const d = await m.decide(state(1, { turnsByReviewer: { rv1: 1, rv2: 1 } }), {
