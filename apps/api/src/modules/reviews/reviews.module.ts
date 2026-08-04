@@ -24,9 +24,10 @@ import { AuditModule } from '../audit/audit.module';
 import { AuditService } from '../audit/audit.service';
 import { OpinionLifecycleService } from './orchestrator/opinion-lifecycle';
 import { ScoringPassService } from './scoring/scoring-pass';
+import { ScoringModule } from './scoring/scoring.module';
 
 @Module({
-  imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule, WorkflowModule, ReportingModule, AuditModule, LlmProviderModule],
+  imports: [PromptModule, MemoryModule, KnowledgeModule, ToolModule, WorkflowModule, ReportingModule, ScoringModule, AuditModule, LlmProviderModule],
   controllers: [ReviewsController, QualityController, DefenseController],
   providers: [
     ReviewsService,
