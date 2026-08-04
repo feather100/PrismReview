@@ -7,12 +7,12 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/language-TypeScript-3178c6" alt="TypeScript"></a>
   <img src="https://img.shields.io/badge/stack-NestJS%2010%20%2B%20Next.js%2014-000" alt="Stack">
-  <a href="docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md"><img src="https://img.shields.io/badge/P1%E2%80%93P5-done-success" alt="Roadmap"></a>
+  <a href="docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md"><img src="https://img.shields.io/badge/Sprint%2011.0%20Phase%203-done-success" alt="Roadmap"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome"></a>
 </p>
 
 <p align="center">
-  <b>默认全 mock · 零 API Key · 30 秒跑通 demo</b>
+  <b>默认全 mock · 零 API Key · 30 秒跑通 demo · 真 LLM（LongCat / LM Studio）一行 env 接入</b>
 </p>
 
 ---
@@ -20,6 +20,7 @@
 ## 📑 目录
 
 - [🌟 这是什么](#-这是什么)
+- [🖼️ 效果预览](#️-效果预览)
 - [✨ 核心特性](#-核心特性)
 - [🏗️ 架构](#️-架构)
 - [🚀 快速开始](#-快速开始)
@@ -41,12 +42,27 @@
 把一份企业方案、架构设计或需求文档丢给 PrismReview，它会：
 
 1. **诊断**方案类型，推荐一组评审专家（CTO / CFO / PMO / Compliance / 用户代言人 …）；
-2. 让多位 **Reviewer Agent** 在 `round-1` 并行给出结构化意见；
-3. 进入 **多轮辩论（Multi-Round Debate）**，由 **Moderator**（mock 或真 LLM）判定是否继续、收敛或强制停止；
+2. 让多位 **Reviewer Agent** 在 `round-1` 并行给出结构化意见（观察与判断分离，`score` 与 `confidenceScore` 语义分离）；
+3. 进入 **多轮辩论（Multi-Round Debate）**，由 **Moderator**（mock 或真 LLM）判定继续 / 扩容 / 转人工 / 收敛 / 强停；
 4. 用 **4 种预设 workflow**（企业 / 代码审查 / 科研 / 论文）驱动不同评分权重与轮次策略；
-5. 产出带 **加权多维评分 + 来源可溯源 + Markdown 导出** 的正式评审报告。
+5. **可升级辩论**（扩容评审面板）+ **风险分级人工门**（高风险低置信度 → HITL）；
+6. 产出带 **加权多维评分 + 段落锚点（passageRefs）+ 来源可溯源 + Markdown 导出** 的正式评审报告。
 
 整套编排跑在一条**自研状态机脊柱**上：显式 9 值状态机 + checkpoint/resume + 条件路由（由 `routeAfterSummarized()` 等显式方法驱动，非通用图遍历）+ HITL 中断恢复。**默认全 mock，零 API Key 即可一键把 demo 跑通。**
+
+## 🖼️ 效果预览
+
+<p align="center">
+  <img src="docs/demo/report-screenshot.png" alt="企业评审报告：加权评分卡 + 段落跳转" width="560"/>
+  <br/><em>企业评审报告：加权评分卡 + 段落锚点跳转（Sprint 11.0 新 UI）</em>
+</p>
+
+<p align="center">
+  <img src="docs/demo/report-research.png" alt="科研评审报告（research 模式）" width="720"/>
+  <br/><em>科研评审（research 模式）：多轮辩论 + 扩容 + 风险门 → 终态报告</em>
+</p>
+
+> **Sprint 11.0（Phase 3）已完成**：T1–T12 全部落地（意见生命周期 / 收敛信号 / 评分纪律 / 观察-判断分离 / 按动作降级 / 成本硬闸 / 可升级辩论 / 风险分级 HITL / 段落锚点 / 校准 / 会话隔离 / 滚动辩论上下文），真 LLM Demo（LongCat）全链路跑通。
 
 ---
 
@@ -68,6 +84,18 @@
 | 🔍 **来源可观测 Provenance** | `providerSummary` 五态来源追踪：`mock / lmstudio / openai_compatible / fallback_mock / failed`。 |
 | 🛡️ **硬闸兜底 Hard-Gate** | `max_rounds` / `max_turns_per_reviewer` 收敛硬闸，杜绝无限讨论。 |
 | 🧹 **内存安全** | 终态自动清理运行时状态；HITL 超时兜底（120s 自动恢复）。 |
+| 🧬 **意见生命周期 + 同题去重（T1）** | `candidate → challenged → accepted / rejected / downgraded` 状态机；同题去重 + 审计。 |
+| 🎯 **收敛三选一信号（T2）** | 全员 AGREE / no-new-arguments / maxRounds 硬闸，显式判定收敛，杜绝"聊不完"。 |
+| 📏 **评分纪律 / 通胀检测（T3）** | 默认锚定分 + 高分占比上限，越限触发 `inflationWarning`。 |
+| ⚖️ **观察-判断分离（T4）** | `confidenceScore`（评审员自评）与 `score`（Moderator 评分 pass）语义分离，聚合时 score 优先。 |
+| 🛟 **按动作降级 + fail-closed（T5）** | provider 按动作降级；外部调用统一策略，失败闭锁不静默。 |
+| 💰 **成本硬闸（T6）** | 单评审成本上限；超限强制收敛产出报告（不 abort）。 |
+| 🚀 **可升级辩论（T7）** | 未收敛自动扩容评审面板（+2 角色）再辩一轮；扩容用尽转人工。 |
+| 🚦 **风险分级 HITL（T8）** | 高风险 + 低置信度意见必过人工门；resume = 人工放行 → 收敛交付报告。 |
+| 📌 **段落级锚点（T9）** | 每条意见带 `passageId` + `passageRefs` 摘录，报告一键跳转原文段落。 |
+| 🎚️ **评分校准对照（T10）** | AI vs 人工盲评分对照 + 标记，支撑评分可信度白皮书。 |
+| 🔒 **会话隔离（T11）** | 并发评审互不串扰（并发回归测试覆盖）。 |
+| 🧠 **滚动辩论上下文（T12）** | 只加载他人历史意见 + 滚动窗口，防自说自话 / 上下文爆炸。 |
 
 ---
 
@@ -202,6 +230,15 @@ node dist/main.js
 
 真实 Moderator：追加 `MODERATOR_PROVIDER=llm`（需 `MODERATOR_PROVIDER=llm` + `ALLOW_EXTERNAL_MODEL_CALLS=true`）。失败自动降级 mock，主流程不中断。
 
+### 一键真 LLM Demo（Sprint 11.0，LongCat）
+
+```bash
+DEMO_MODE=enterprise node scripts/demo-run.js   # 企业评审（更快收敛）
+DEMO_MODE=research   node scripts/demo-run.js   # 科研评审（多轮 + 扩容 + 风险门，演示 T7/T8）
+```
+
+脚本自动拉起 API(:4000) + Web(:3000)，走通「创建评审 → 诊断 → 选角色 → 真 LLM 多轮 → 中断自动 resume → 报告」；结束后 `node scripts/demo-run.js --cleanup` 清理服务进程。LongCat provider 已预置在 DB，LLM 调用约 20–30s/轮。
+
 ---
 
 ## 🤔 为什么这样做（设计思路）
@@ -230,7 +267,9 @@ node dist/main.js
 每次 PR 自动运行（见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)）：
 
 - ✅ **TypeScript 类型检查**（`apps/api` + `apps/web`，0 error 门禁）
-- ✅ **53 项 Jest 单元测试**（编排状态机、Moderator 决策、幂等、硬闸、评分等核心逻辑）
+- ✅ **211 项 Jest 单元测试**（Sprint 11.0：编排状态机、Moderator 决策链、幂等、硬闸、评分、会话隔离等）
+- ✅ **e2e 冒烟**：`node scripts/e2e-smoke.js`（API 启动 5/5）+ `node scripts/e2e-verify-sprint-10.1.js`（5/5）
+- ✅ **数据库迁移**：19/19 已入库；CI 用 `prisma migrate deploy`（见 [Deployment_Migration_Checklist](docs/coordination/Deployment_Migration_Checklist.md)）
 - ✅ **冒烟脚本**（16 个 `scripts/*.js` 验证主链路自愈）
 - ✅ **密钥扫描**（提交前检测硬编码密钥）
 
@@ -245,6 +284,10 @@ node dist/main.js
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、编排脊柱、Moderator、数据模型、观测性 |
 | [docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md](docs/roadmap/Sprint_9.0_Product_Roadmap_Reset.md) | 架构决策锁定（三项承重决策）+ P0–P6 路线图 |
 | [docs/coordination/ACTIVE_SPRINT.md](docs/coordination/ACTIVE_SPRINT.md) | 当前 Sprint 与 Gate 记录 |
+| [docs/coordination/Sprint_11.0_Summary.md](docs/coordination/Sprint_11.0_Summary.md) | Sprint 11.0 总结：调研 → 评审 → Phase 3 六项 P0 落地 |
+| [docs/coordination/Handoff_20260804.md](docs/coordination/Handoff_20260804.md) | 交接文档：当前状态 + 遗留项 + 环境备忘 |
+| [docs/coordination/Deployment_Migration_Checklist.md](docs/coordination/Deployment_Migration_Checklist.md) | 19 个迁移总表 + 执行/验证/风险清单 |
+| [docs/research/phase3-task-list-20260803.md](docs/research/phase3-task-list-20260803.md) | Phase 3 任务清单（T1–T14）与验收口径 |
 | [docs/coordination/Sprint_6.0_Full_Stack_Review_Report.md](docs/coordination/Sprint_6.0_Full_Stack_Review_Report.md) | 全栈审查报告（205 测试场景 + P1/P2 修复） |
 | [docs/demo/MVP_Demo_Runbook.md](docs/demo/MVP_Demo_Runbook.md) | MVP Demo 操作手册 |
 | [docs/coordination/AGENT_COORDINATION_PROTOCOL.md](docs/coordination/AGENT_COORDINATION_PROTOCOL.md) | Agent 协作协议（标准 Gate / 快速 Gate） |
@@ -262,7 +305,8 @@ node dist/main.js
 | **P3** | 版本化 Prompt 注册表 + Reviewer/Project Memory（蒸馏 profile）+ Rolling Summary | ✅ 完成（Sprint 5.1） |
 | **P4** | MCP 工具层（预留）+ HITL 中断/恢复 + 真 LLM Moderator + 人类回合覆盖 | ✅ 完成（Sprint 5.2） |
 | **P5** | 4 种预设 workflow + 加权多维评分 + 报告生成器 + 内存安全加固 | ✅ 完成（Sprint 5.3） |
-| **P6** | 规模化 + 生产硬化：AgentRuntime worker 进程 + OTel 全链路 + 成本看板 + 多租户 | 🔜 下一阶段 |
+| **Sprint 11.0 · Phase 3** | 阶段 3 壁垒：生命周期 / 收敛信号 / 评分纪律 / 评分分离 / 降级 / 成本 / 升级辩论 / 风险门 / 段落锚点 / 校准 / 并发隔离 / 辩论上下文（T1–T12）+ 真 LLM Demo + CI | ✅ 完成（2026-08-04） |
+| **P6** | 规模化 + 生产硬化：AgentRuntime worker 进程 + OTel 全链路 + 成本看板 + 多租户；T13/T14（确定性-语义分层 / 复评闭环） | 🔜 下一阶段 |
 
 ---
 
